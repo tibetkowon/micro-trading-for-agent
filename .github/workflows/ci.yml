@@ -114,9 +114,13 @@ jobs:
           chmod 600 ~/.ssh/id_rsa
           ssh-keyscan -H ${{ secrets.NCP_HOST }} >> ~/.ssh/known_hosts
 
-      # 4. 서버에 파일 전송
+      # 4. 서비스 중지 후 파일 전송
       - name: Deploy files to server
         run: |
+          # 서비스 중지 (바이너리 파일 잠금 해제)
+          ssh ${{ secrets.NCP_USER }}@${{ secrets.NCP_HOST }} \
+            "systemctl stop micro-trading || true"
+
           # 디렉토리 구조 생성
           ssh ${{ secrets.NCP_USER }}@${{ secrets.NCP_HOST }} \
             "mkdir -p /service/micro-trading-for-agent/frontend"
@@ -129,9 +133,9 @@ jobs:
           rsync -az --delete frontend/dist/ \
             ${{ secrets.NCP_USER }}@${{ secrets.NCP_HOST }}:/service/micro-trading-for-agent/frontend/dist/
 
-      # 5. 서비스 재시작
-      - name: Restart service
+      # 5. 서비스 시작
+      - name: Start service
         run: |
           ssh ${{ secrets.NCP_USER }}@${{ secrets.NCP_HOST }} \
             "chmod +x /service/micro-trading-for-agent/server && \
-             systemctl restart micro-trading"
+             systemctl start micro-trading"
