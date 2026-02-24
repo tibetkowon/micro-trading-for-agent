@@ -1,13 +1,18 @@
 # Database Schema
 
 > Engine: SQLite (WAL mode, foreign keys enabled)
-> Last updated: 2026-02-24
+> Last updated: 2026-02-25
 
 ---
 
 ## Table: `settings`
 
-**Purpose:** Stores application configuration key-value pairs, such as KIS API credentials. Sensitive values should be encrypted at the application layer in future iterations.
+**Purpose:** Stores application configuration key-value pairs. Currently used for internal system state (e.g., credential fingerprint). Sensitive values should be encrypted at the application layer in future iterations.
+
+**Known keys:**
+| Key | Description |
+|-----|-------------|
+| `kis_credentials_hash` | SHA-256 of `KIS_APP_KEY:KIS_APP_SECRET`; used on startup to detect credential changes and invalidate cached tokens |
 
 | Column | Type | Constraints | Description |
 |--------|------|-------------|-------------|
@@ -19,7 +24,7 @@
 
 ## Table: `tokens`
 
-**Purpose:** Persists KIS OAuth access tokens to survive server restarts. Only the most recent token (highest `id`) is used.
+**Purpose:** Persists KIS OAuth access tokens to survive server restarts. Only the most recent token (highest `id`) is used. All tokens are cleared automatically when `KIS_APP_KEY` or `KIS_APP_SECRET` changes.
 
 | Column | Type | Constraints | Description |
 |--------|------|-------------|-------------|

@@ -1,6 +1,6 @@
 # Project Architecture
 
-> Last updated: 2026-02-24
+> Last updated: 2026-02-25
 
 ## Directory Tree
 
@@ -8,7 +8,7 @@
 micro-trading-for-agent/
 ├── .github/
 │   └── workflows/
-│       └── ci.yml              # CI/CD pipeline (Go build/test + React lint/build)
+│       └── ci.yml              # CI: Go build/test/fmt + React lint/build; CD: linux/amd64 cross-compile → SCP → rsync → systemctl restart
 ├── .claude/
 │   └── skills/                 # Behavioral skill instructions for the AI agent
 ├── backend/                    # Go backend root
@@ -25,8 +25,8 @@ micro-trading-for-agent/
 │   │   ├── logger/
 │   │   │   └── logger.go       # Structured JSON logging; KISError() enforces required fields
 │   │   ├── kis/
-│   │   │   ├── client.go       # KIS REST API client (price, balance, order, history)
-│   │   │   ├── token.go        # OAuth token issuance + 20-hour auto-refresh
+│   │   │   ├── client.go       # KIS REST API client (price, balance, order, history); real trading only
+│   │   │   ├── token.go        # OAuth token issuance + 20-hour auto-refresh + credential fingerprint check
 │   │   │   └── ratelimiter.go  # TPS limiter (15 req/s) using golang.org/x/time/rate
 │   │   ├── agent/
 │   │   │   ├── stock_info.go   # Fetch stock price data for AI decision-making
@@ -34,8 +34,8 @@ micro-trading-for-agent/
 │   │   │   ├── order.go        # Place buy/sell orders; persist to orders table
 │   │   │   └── history.go      # Sync KIS execution history to local DB
 │   │   └── api/
-│   │       ├── handlers.go     # HTTP handler functions (one per endpoint)
-│   │       └── router.go       # gin.Engine setup; route registration
+│   │       ├── handlers.go     # HTTP handler functions (balance, orders, logs, settings, debug)
+│   │       └── router.go       # gin.Engine setup; route registration; SPA fallback
 │   ├── data/                   # SQLite .db files (git-ignored)
 │   └── go.mod                  # Go module definition
 ├── frontend/                   # React frontend root
@@ -52,7 +52,7 @@ micro-trading-for-agent/
 │   │       ├── Dashboard.jsx   # Balance / profit rate cards
 │   │       ├── Orders.jsx      # Order history table
 │   │       ├── KISLogs.jsx     # KIS API error log viewer
-│   │       └── Settings.jsx    # KIS credentials management UI
+│   │       └── Settings.jsx    # Account info (read-only); .env 기반 설정 확인
 │   ├── index.html              # Vite HTML template
 │   ├── vite.config.js          # Vite config; /api proxy to :8080
 │   ├── tailwind.config.js      # Tailwind content paths
