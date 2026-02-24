@@ -6,6 +6,32 @@
 
 ## 2026-02-25
 
+### [Feature] 종목 현재가 + MA5/MA20 + 캔들 차트 API 추가
+
+**Description:**
+에이전트가 HTTP로 종목 정보와 차트 데이터를 조회할 수 있는 두 엔드포인트를 추가했습니다.
+- `GET /api/stock/:code` — 현재가, 등락률, 거래량, MA5, MA20 반환
+- `GET /api/stock/:code/chart?interval=1m|5m|1h` — 당일 장중 OHLCV 캔들 반환 (5m/1h는 1분봉에서 집계)
+
+**Files Touched:**
+- `backend/internal/kis/chart.go` (신규) — KIS 분봉/일봉 차트 API 클라이언트 (`GetMinuteChart`, `GetDailyChart`)
+- `backend/internal/agent/chart.go` (신규) — `GetChart` 함수 + 분봉 페이지네이션 + 5분/시간봉 집계 로직
+- `backend/internal/agent/stock_info.go` — `StockInfo`에 `MA5`, `MA20` 필드 추가; `GetStockInfo`에서 일봉 조회 후 MA 계산
+- `backend/internal/api/handlers.go` — `GetStock`, `GetStockChart` 핸들러 추가
+- `backend/internal/api/router.go` — `GET /api/stock/:code`, `GET /api/stock/:code/chart` 라우트 추가
+
+**MA 계산 방식:**
+- 최근 40 calendar days의 일봉 종가(`stck_clpr`)를 KIS `inquire-daily-itemchartprice`로 조회
+- 오름차순 정렬 후 MA5 = 마지막 5개 평균, MA20 = 마지막 20개 평균
+- 데이터 부족 시 0 반환
+
+**차트 데이터 방식:**
+- KIS `inquire-time-itemchartprice` (TR: FHKST03010200)로 1분봉 취득 (페이지당 30봉)
+- 5m: 최대 5회 호출 → 150 1분봉 → 30 5분봉으로 집계
+- 1h: 최대 14회 호출 → 390 1분봉 → 당일 전체 시간봉으로 집계
+
+---
+
 ### [Fix] 모의투자 제거 및 크레덴셜 변경 시 토큰 자동 무효화
 
 **Description:**

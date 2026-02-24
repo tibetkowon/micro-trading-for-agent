@@ -32,3 +32,6 @@ Thumbs.db
 .idea/
 *.swp
 *.swo
+
+# Agent skill guide (managed locally, not versioned)
+SKILL.md

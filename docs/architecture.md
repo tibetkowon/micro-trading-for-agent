@@ -26,15 +26,17 @@ micro-trading-for-agent/
 │   │   │   └── logger.go       # Structured JSON logging; KISError() enforces required fields
 │   │   ├── kis/
 │   │   │   ├── client.go       # KIS REST API client (price, balance, order, history); real trading only
+│   │   │   ├── chart.go        # KIS chart API client (GetMinuteChart 1분봉, GetDailyChart 일봉)
 │   │   │   ├── token.go        # OAuth token issuance + 20-hour auto-refresh + credential fingerprint check
 │   │   │   └── ratelimiter.go  # TPS limiter (15 req/s) using golang.org/x/time/rate
 │   │   ├── agent/
-│   │   │   ├── stock_info.go   # Fetch stock price data for AI decision-making
+│   │   │   ├── stock_info.go   # GetStockInfo: current price + MA5/MA20 (from daily chart)
+│   │   │   ├── chart.go        # GetChart: OHLCV candles for 1m/5m/1h with pagination & aggregation
 │   │   │   ├── balance.go      # Account balance fetch + DB snapshot
 │   │   │   ├── order.go        # Place buy/sell orders; persist to orders table
 │   │   │   └── history.go      # Sync KIS execution history to local DB
 │   │   └── api/
-│   │       ├── handlers.go     # HTTP handler functions (balance, orders, logs, settings, debug)
+│   │       ├── handlers.go     # HTTP handler functions (stock, chart, balance, orders, logs, settings, debug)
 │   │       └── router.go       # gin.Engine setup; route registration; SPA fallback
 │   ├── data/                   # SQLite .db files (git-ignored)
 │   └── go.mod                  # Go module definition

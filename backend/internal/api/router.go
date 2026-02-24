@@ -18,6 +18,8 @@ func SetupRouter(h *Handler, frontendDist string) *gin.Engine {
 	api := r.Group("/api")
 	{
 		api.GET("/balance", h.GetBalance)
+		api.GET("/stock/:code", h.GetStock)
+		api.GET("/stock/:code/chart", h.GetStockChart)
 		api.GET("/orders", h.GetOrders)
 		api.POST("/orders", h.PlaceOrder)
 		api.GET("/logs/kis", h.GetKISLogs)

@@ -128,6 +128,29 @@ func (h *Handler) GetKISLogs(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"logs": logs})
 }
 
+// GET /api/stock/:code — 현재가 + MA5 + MA20
+func (h *Handler) GetStock(c *gin.Context) {
+	code := c.Param("code")
+	info, err := agent.GetStockInfo(c.Request.Context(), h.client, code)
+	if err != nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, info)
+}
+
+// GET /api/stock/:code/chart?interval=1m|5m|1h
+func (h *Handler) GetStockChart(c *gin.Context) {
+	code := c.Param("code")
+	interval := c.DefaultQuery("interval", "1m")
+	candles, err := agent.GetChart(c.Request.Context(), h.client, code, interval)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"stock_code": code, "interval": interval, "candles": candles})
+}
+
 // GET /api/settings — 읽기 전용 서버 상태 조회 (민감 정보 제외)
 func (h *Handler) GetSettings(c *gin.Context) {
 	accountNo := h.cfg.KISAccountNo
