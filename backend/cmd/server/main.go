@@ -35,7 +35,7 @@ func main() {
 	defer cancel()
 
 	// Initialize KIS token manager and issue the first token.
-	tokenManager := kis.NewTokenManager(cfg.BaseURL(), cfg.KISAppKey, cfg.KISAppSecret, db)
+	tokenManager := kis.NewTokenManager(cfg.BaseURL(), cfg.KISIsMock, cfg.KISAppKey, cfg.KISAppSecret, db)
 	if cfg.KISAppKey != "" && cfg.KISAppSecret != "" {
 		if _, err := tokenManager.EnsureToken(ctx); err != nil {
 			logger.Warn("initial KIS token issue failed — API calls will fail until resolved",

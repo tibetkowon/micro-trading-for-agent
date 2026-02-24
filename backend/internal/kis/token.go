@@ -25,6 +25,7 @@ const (
 type TokenManager struct {
 	mu        sync.RWMutex
 	baseURL   string
+	isMock    bool
 	appKey    string
 	appSecret string
 	db        *database.DB
@@ -32,9 +33,10 @@ type TokenManager struct {
 }
 
 // NewTokenManager creates a new TokenManager.
-func NewTokenManager(baseURL, appKey, appSecret string, db *database.DB) *TokenManager {
+func NewTokenManager(baseURL string, isMock bool, appKey, appSecret string, db *database.DB) *TokenManager {
 	return &TokenManager{
 		baseURL:   baseURL,
+		isMock:    isMock,
 		appKey:    appKey,
 		appSecret: appSecret,
 		db:        db,
@@ -42,11 +44,12 @@ func NewTokenManager(baseURL, appKey, appSecret string, db *database.DB) *TokenM
 	}
 }
 
-// SetBaseURL updates the base URL (called when switching mock/real mode).
-func (tm *TokenManager) SetBaseURL(baseURL string) {
+// SetMode updates the base URL and mock flag (called when switching mock/real mode).
+func (tm *TokenManager) SetMode(baseURL string, isMock bool) {
 	tm.mu.Lock()
 	defer tm.mu.Unlock()
 	tm.baseURL = baseURL
+	tm.isMock = isMock
 }
 
 // issueTokenResponse is the KIS token API response schema.
@@ -101,9 +104,14 @@ func (tm *TokenManager) IssueToken(ctx context.Context) (*models.Token, error) {
 		return nil, fmt.Errorf("empty access token: %s", res.Msg)
 	}
 
+	tm.mu.RLock()
+	isMock := tm.isMock
+	tm.mu.RUnlock()
+
 	now := time.Now()
 	tok := &models.Token{
 		AccessToken: res.AccessToken,
+		IsMock:      isMock,
 		IssuedAt:    now,
 		ExpiresAt:   now.Add(time.Duration(res.ExpiresIn) * time.Second),
 	}
@@ -116,27 +124,33 @@ func (tm *TokenManager) IssueToken(ctx context.Context) (*models.Token, error) {
 	return tok, nil
 }
 
-// GetCurrentToken returns the most recently issued valid token from DB.
+// GetCurrentToken returns the most recent valid token for the current environment.
 func (tm *TokenManager) GetCurrentToken(ctx context.Context) (*models.Token, error) {
+	tm.mu.RLock()
+	isMock := tm.isMock
+	tm.mu.RUnlock()
+
 	row := tm.db.QueryRowContext(ctx,
-		`SELECT id, access_token, issued_at, expires_at FROM tokens ORDER BY id DESC LIMIT 1`)
+		`SELECT id, access_token, is_mock, issued_at, expires_at
+		 FROM tokens WHERE is_mock = ? ORDER BY id DESC LIMIT 1`,
+		isMock)
 
 	var tok models.Token
-	err := row.Scan(&tok.ID, &tok.AccessToken, &tok.IssuedAt, &tok.ExpiresAt)
+	err := row.Scan(&tok.ID, &tok.AccessToken, &tok.IsMock, &tok.IssuedAt, &tok.ExpiresAt)
 	if err != nil {
 		return nil, fmt.Errorf("no token found: %w", err)
 	}
 	return &tok, nil
 }
 
-// EnsureToken reuses a valid token from DB if it has more than 1 hour remaining,
-// otherwise issues a new one. This prevents hitting KIS rate limits (1 issue/min)
-// on every server restart.
+// EnsureToken reuses a valid token for the current environment if it has more than
+// 1 hour remaining, otherwise issues a new one.
+// Prevents hitting KIS rate limits (1 issue/min) on repeated restarts or mode switches.
 func (tm *TokenManager) EnsureToken(ctx context.Context) (*models.Token, error) {
 	tok, err := tm.GetCurrentToken(ctx)
 	if err == nil && time.Until(tok.ExpiresAt) > time.Hour {
 		logger.Info("reusing existing KIS token from DB",
-			map[string]any{"expires_at": tok.ExpiresAt})
+			map[string]any{"expires_at": tok.ExpiresAt, "is_mock": tok.IsMock})
 		return tok, nil
 	}
 	return tm.IssueToken(ctx)
@@ -172,8 +186,8 @@ func (tm *TokenManager) Stop() {
 
 func (tm *TokenManager) saveToken(tok *models.Token) error {
 	_, err := tm.db.Exec(
-		`INSERT INTO tokens (access_token, issued_at, expires_at) VALUES (?, ?, ?)`,
-		tok.AccessToken, tok.IssuedAt, tok.ExpiresAt,
+		`INSERT INTO tokens (access_token, is_mock, issued_at, expires_at) VALUES (?, ?, ?, ?)`,
+		tok.AccessToken, tok.IsMock, tok.IssuedAt, tok.ExpiresAt,
 	)
 	return err
 }

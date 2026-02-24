@@ -81,8 +81,10 @@ func (c *Client) SetMock(ctx context.Context, isMock bool) error {
 	}
 	c.mu.Unlock()
 
-	c.tokenManager.SetBaseURL(c.baseURL)
-	if _, err := c.tokenManager.IssueToken(ctx); err != nil {
+	c.tokenManager.SetMode(c.baseURL, isMock)
+	// Reuse existing token for this environment if still valid,
+	// avoiding KIS 1-per-minute rate limit on mode switches.
+	if _, err := c.tokenManager.EnsureToken(ctx); err != nil {
 		return fmt.Errorf("re-issue token after mode switch: %w", err)
 	}
 	logger.Info("KIS mode switched", map[string]any{"is_mock": isMock})

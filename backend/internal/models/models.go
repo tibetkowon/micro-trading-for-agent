@@ -61,6 +61,7 @@ type KISAPILog struct {
 type Token struct {
 	ID          int64     `json:"id"`
 	AccessToken string    `json:"access_token"`
+	IsMock      bool      `json:"is_mock"`
 	IssuedAt    time.Time `json:"issued_at"`
 	ExpiresAt   time.Time `json:"expires_at"`
 }
