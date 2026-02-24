@@ -6,6 +6,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/micro-trading-for-agent/backend/internal/agent"
+	"github.com/micro-trading-for-agent/backend/internal/config"
 	"github.com/micro-trading-for-agent/backend/internal/database"
 	"github.com/micro-trading-for-agent/backend/internal/kis"
 	"github.com/micro-trading-for-agent/backend/internal/models"
@@ -13,13 +14,15 @@ import (
 
 // Handler holds shared dependencies for all HTTP handlers.
 type Handler struct {
-	db     *database.DB
-	client *kis.Client
+	db           *database.DB
+	client       *kis.Client
+	tokenManager *kis.TokenManager
+	cfg          *config.Config
 }
 
 // NewHandler creates a new Handler with the given dependencies.
-func NewHandler(db *database.DB, client *kis.Client) *Handler {
-	return &Handler{db: db, client: client}
+func NewHandler(db *database.DB, client *kis.Client, tokenManager *kis.TokenManager, cfg *config.Config) *Handler {
+	return &Handler{db: db, client: client, tokenManager: tokenManager, cfg: cfg}
 }
 
 // GET /api/balance
@@ -125,57 +128,40 @@ func (h *Handler) GetKISLogs(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"logs": logs})
 }
 
-// GET /api/settings — returns settings with sensitive values masked
+// GET /api/settings — 읽기 전용 서버 상태 조회 (민감 정보 제외)
 func (h *Handler) GetSettings(c *gin.Context) {
-	rows, err := h.db.QueryContext(c.Request.Context(),
-		`SELECT key, value, updated_at FROM settings ORDER BY key`)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
+	accountNo := h.cfg.KISAccountNo
+	maskedAccount := ""
+	if len(accountNo) >= 4 {
+		maskedAccount = "****" + accountNo[len(accountNo)-4:]
 	}
-	defer rows.Close()
 
-	sensitiveKeys := map[string]bool{
-		"KIS_APP_KEY": true, "KIS_APP_SECRET": true,
-	}
-	var settings []gin.H
-	for rows.Next() {
-		var s models.Setting
-		if err := rows.Scan(&s.Key, &s.Value, &s.UpdatedAt); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
-		val := s.Value
-		if sensitiveKeys[s.Key] && len(val) > 4 {
-			val = val[:4] + "****"
-		}
-		settings = append(settings, gin.H{"key": s.Key, "value": val, "updated_at": s.UpdatedAt})
-	}
-	if settings == nil {
-		settings = []gin.H{}
-	}
-	c.JSON(http.StatusOK, gin.H{"settings": settings})
+	c.JSON(http.StatusOK, gin.H{
+		"is_mock":        h.client.IsMock(),
+		"account_no":     maskedAccount,
+		"kis_configured": h.cfg.KISAppKey != "" && h.cfg.KISAppSecret != "",
+		"account_type":   h.cfg.KISAccountType,
+	})
 }
 
-// PUT /api/settings
-func (h *Handler) UpdateSettings(c *gin.Context) {
+// PUT /api/settings/mode — 모의투자/실전투자 전환
+func (h *Handler) SetMode(c *gin.Context) {
 	var req struct {
-		Key   string `json:"key" binding:"required"`
-		Value string `json:"value" binding:"required"`
+		IsMock bool `json:"is_mock"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	_, err := h.db.ExecContext(c.Request.Context(),
-		`INSERT INTO settings (key, value, updated_at) VALUES (?, ?, datetime('now'))
-		 ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
-		req.Key, req.Value,
-	)
-	if err != nil {
+	if err := h.client.SetMock(c.Request.Context(), req.IsMock); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "setting updated"})
+
+	mode := "실전투자"
+	if req.IsMock {
+		mode = "모의투자"
+	}
+	c.JSON(http.StatusOK, gin.H{"is_mock": req.IsMock, "message": mode + "로 전환되었습니다"})
 }

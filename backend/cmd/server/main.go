@@ -48,7 +48,9 @@ func main() {
 	}
 
 	kisClient := kis.NewClient(
-		cfg.BaseURL(),
+		cfg.KISBaseURL,
+		cfg.KISMockURL,
+		cfg.KISIsMock,
 		cfg.KISAppKey,
 		cfg.KISAppSecret,
 		cfg.KISAccountNo,
@@ -57,7 +59,7 @@ func main() {
 		db,
 	)
 
-	handler := api.NewHandler(db, kisClient)
+	handler := api.NewHandler(db, kisClient, tokenManager, cfg)
 	router := api.SetupRouter(handler, cfg.FrontendDist)
 
 	srv := &http.Server{

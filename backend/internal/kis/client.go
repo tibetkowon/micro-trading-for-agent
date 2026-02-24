@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/micro-trading-for-agent/backend/internal/database"
@@ -16,7 +17,11 @@ import (
 // Client is the KIS API HTTP client.
 // All responses are rate-limited; errors are persisted to kis_api_logs.
 type Client struct {
+	mu           sync.RWMutex
 	baseURL      string
+	isMock       bool
+	mockBaseURL  string
+	realBaseURL  string
 	appKey       string
 	appSecret    string
 	accountNo    string
@@ -29,12 +34,21 @@ type Client struct {
 
 // NewClient creates a fully configured KIS API client.
 func NewClient(
-	baseURL, appKey, appSecret, accountNo, accountType string,
+	realBaseURL, mockBaseURL string,
+	isMock bool,
+	appKey, appSecret, accountNo, accountType string,
 	tokenManager *TokenManager,
 	db *database.DB,
 ) *Client {
+	baseURL := realBaseURL
+	if isMock {
+		baseURL = mockBaseURL
+	}
 	return &Client{
 		baseURL:      baseURL,
+		isMock:       isMock,
+		mockBaseURL:  mockBaseURL,
+		realBaseURL:  realBaseURL,
 		appKey:       appKey,
 		appSecret:    appSecret,
 		accountNo:    accountNo,
@@ -45,6 +59,45 @@ func NewClient(
 		db:          db,
 		httpClient:  &http.Client{Timeout: 10 * time.Second},
 	}
+}
+
+// IsMock returns the current trading mode.
+func (c *Client) IsMock() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.isMock
+}
+
+// SetMock switches between mock (모의투자) and real (실전투자) mode.
+// It updates the base URL on both the client and the token manager,
+// then re-issues a token for the new environment.
+func (c *Client) SetMock(ctx context.Context, isMock bool) error {
+	c.mu.Lock()
+	c.isMock = isMock
+	if isMock {
+		c.baseURL = c.mockBaseURL
+	} else {
+		c.baseURL = c.realBaseURL
+	}
+	c.mu.Unlock()
+
+	c.tokenManager.SetBaseURL(c.baseURL)
+	if _, err := c.tokenManager.IssueToken(ctx); err != nil {
+		return fmt.Errorf("re-issue token after mode switch: %w", err)
+	}
+	logger.Info("KIS mode switched", map[string]any{"is_mock": isMock})
+	return nil
+}
+
+// trID returns the appropriate TR ID for the current mode.
+// 모의투자 TR IDs use a "V" prefix instead of "T".
+func (c *Client) trID(real, mock string) string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if c.isMock {
+		return mock
+	}
+	return real
 }
 
 // --- Request/Response DTOs ---
@@ -85,6 +138,7 @@ func (c *Client) GetStockPrice(ctx context.Context, stockCode string) (*StockPri
 	endpoint := "/uapi/domestic-stock/v1/quotations/inquire-price"
 	params := fmt.Sprintf("?FID_COND_MRKT_DIV_CODE=J&FID_INPUT_ISCD=%s", stockCode)
 
+	// 주식 현재가 TR ID는 모의/실전 동일
 	raw, err := c.get(ctx, endpoint, params, "FHKST01010100")
 	if err != nil {
 		return nil, err
@@ -108,7 +162,7 @@ func (c *Client) GetBalance(ctx context.Context) (*BalanceResponse, error) {
 	params := fmt.Sprintf("?CANO=%s&ACNT_PRDT_CD=%s&PDNO=&ORD_UNPR=&ORD_QTY=&OVRS_ICLD_YN=N&CMA_EVLU_AMT_ICLD_YN=N&ITEM_OVRS_EXCG_CD=",
 		c.accountNo, c.accountType)
 
-	raw, err := c.get(ctx, endpoint, params, "TTTC8908R")
+	raw, err := c.get(ctx, endpoint, params, c.trID("TTTC8908R", "VTTC8908R"))
 	if err != nil {
 		return nil, err
 	}
@@ -127,12 +181,16 @@ func (c *Client) GetBalance(ctx context.Context) (*BalanceResponse, error) {
 
 // PlaceBuyOrder places a buy order.
 func (c *Client) PlaceBuyOrder(ctx context.Context, req OrderRequest) (*OrderResponse, error) {
-	return c.placeOrder(ctx, req, "TTTC0802U", "/uapi/domestic-stock/v1/trading/order-cash")
+	return c.placeOrder(ctx, req,
+		c.trID("TTTC0802U", "VTTC0802U"),
+		"/uapi/domestic-stock/v1/trading/order-cash")
 }
 
 // PlaceSellOrder places a sell order.
 func (c *Client) PlaceSellOrder(ctx context.Context, req OrderRequest) (*OrderResponse, error) {
-	return c.placeOrder(ctx, req, "TTTC0801U", "/uapi/domestic-stock/v1/trading/order-cash")
+	return c.placeOrder(ctx, req,
+		c.trID("TTTC0801U", "VTTC0801U"),
+		"/uapi/domestic-stock/v1/trading/order-cash")
 }
 
 // GetOrderHistory fetches recent order history.
@@ -141,7 +199,7 @@ func (c *Client) GetOrderHistory(ctx context.Context) ([]map[string]any, error) 
 	params := fmt.Sprintf("?CANO=%s&ACNT_PRDT_CD=%s&INQR_STRT_DT=&INQR_END_DT=&SLL_BUY_DVSN_CD=00&INQR_DVSN=00&PDNO=&CCLD_DVSN=01&ORD_GNO_BRNO=&ODNO=&CANC_YN=N&CTX_AREA_FK100=&CTX_AREA_NK100=",
 		c.accountNo, c.accountType)
 
-	raw, err := c.get(ctx, endpoint, params, "TTTC8001R")
+	raw, err := c.get(ctx, endpoint, params, c.trID("TTTC8001R", "VTTC8001R"))
 	if err != nil {
 		return nil, err
 	}
@@ -169,7 +227,11 @@ func (c *Client) get(ctx context.Context, endpoint, queryParams, trID string) ([
 		return nil, fmt.Errorf("get token: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+endpoint+queryParams, nil)
+	c.mu.RLock()
+	baseURL := c.baseURL
+	c.mu.RUnlock()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, baseURL+endpoint+queryParams, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -208,7 +270,11 @@ func (c *Client) placeOrder(ctx context.Context, req OrderRequest, trID, endpoin
 		"ORD_UNPR":     req.Price,
 	})
 
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+endpoint, bytes.NewReader(body))
+	c.mu.RLock()
+	baseURL := c.baseURL
+	c.mu.RUnlock()
+
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL+endpoint, bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}

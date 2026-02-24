@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/micro-trading-for-agent/backend/internal/database"
@@ -22,6 +23,7 @@ const (
 
 // TokenManager handles KIS access token lifecycle.
 type TokenManager struct {
+	mu        sync.RWMutex
 	baseURL   string
 	appKey    string
 	appSecret string
@@ -40,6 +42,13 @@ func NewTokenManager(baseURL, appKey, appSecret string, db *database.DB) *TokenM
 	}
 }
 
+// SetBaseURL updates the base URL (called when switching mock/real mode).
+func (tm *TokenManager) SetBaseURL(baseURL string) {
+	tm.mu.Lock()
+	defer tm.mu.Unlock()
+	tm.baseURL = baseURL
+}
+
 // issueTokenResponse is the KIS token API response schema.
 type issueTokenResponse struct {
 	AccessToken string `json:"access_token"`
@@ -51,6 +60,10 @@ type issueTokenResponse struct {
 
 // IssueToken calls the KIS OAuth endpoint and persists the token to DB.
 func (tm *TokenManager) IssueToken(ctx context.Context) (*models.Token, error) {
+	tm.mu.RLock()
+	baseURL := tm.baseURL
+	tm.mu.RUnlock()
+
 	payload := map[string]string{
 		"grant_type": "client_credentials",
 		"appkey":     tm.appKey,
@@ -58,7 +71,7 @@ func (tm *TokenManager) IssueToken(ctx context.Context) (*models.Token, error) {
 	}
 	body, _ := json.Marshal(payload)
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, tm.baseURL+tokenEndpoint, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL+tokenEndpoint, bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("create token request: %w", err)
 	}
