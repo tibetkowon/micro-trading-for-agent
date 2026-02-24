@@ -10,17 +10,17 @@ import (
 
 // Config holds all application configuration loaded from environment variables.
 type Config struct {
-	KISAppKey     string
-	KISAppSecret  string
-	KISAccountNo  string
+	KISAppKey      string
+	KISAppSecret   string
+	KISAccountNo   string
 	KISAccountType string
-	KISBaseURL    string
-	KISMockURL    string
-	KISIsMock     bool
+	KISBaseURL     string
+	KISMockURL     string
+	KISIsMock      bool
 
-	DatabasePath  string
-	ServerPort    string
-	FrontendDist  string
+	DatabasePath string
+	ServerPort   string
+	FrontendDist string
 }
 
 // Load reads .env file (if present) and returns a populated Config.
@@ -36,9 +36,9 @@ func Load() (*Config, error) {
 		KISAccountType: getEnv("KIS_ACCOUNT_TYPE", "01"),
 		KISBaseURL:     getEnv("KIS_BASE_URL", "https://openapi.koreainvestment.com:9443"),
 		KISMockURL:     getEnv("KIS_MOCK_URL", "https://openapivts.koreainvestment.com:29443"),
-		DatabasePath:  getEnv("DATABASE_PATH", "./data/trading.db"),
-		ServerPort:    getEnv("SERVER_PORT", "8080"),
-		FrontendDist:  getEnv("FRONTEND_DIST_PATH", "./frontend/dist"),
+		DatabasePath:   getEnv("DATABASE_PATH", "./data/trading.db"),
+		ServerPort:     getEnv("SERVER_PORT", "8080"),
+		FrontendDist:   getEnv("FRONTEND_DIST_PATH", "./frontend/dist"),
 	}
 
 	isMock, err := strconv.ParseBool(getEnv("KIS_IS_MOCK", "true"))

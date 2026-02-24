@@ -1,3 +1,5 @@
+import PropTypes from 'prop-types'
+
 export default function Card({ title, value, sub, className = '' }) {
   return (
     <div className={`bg-gray-900 border border-gray-800 rounded-xl p-5 ${className}`}>
@@ -6,4 +8,11 @@ export default function Card({ title, value, sub, className = '' }) {
       {sub && <p className="text-sm text-gray-400 mt-1">{sub}</p>}
     </div>
   )
+}
+
+Card.propTypes = {
+  title: PropTypes.string.isRequired,
+  value: PropTypes.string,
+  sub: PropTypes.string,
+  className: PropTypes.string,
 }

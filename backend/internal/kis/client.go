@@ -51,31 +51,31 @@ func NewClient(
 
 // StockPriceResponse holds the current price data for a stock.
 type StockPriceResponse struct {
-	StockCode    string  `json:"stck_shrn_iscd"` // 단축종목코드
-	CurrentPrice string  `json:"stck_prpr"`      // 주식 현재가
-	ChangeRate   string  `json:"prdy_ctrt"`      // 전일대비율
-	Volume       string  `json:"acml_vol"`       // 누적 거래량
+	StockCode    string `json:"stck_shrn_iscd"` // 단축종목코드
+	CurrentPrice string `json:"stck_prpr"`      // 주식 현재가
+	ChangeRate   string `json:"prdy_ctrt"`      // 전일대비율
+	Volume       string `json:"acml_vol"`       // 누적 거래량
 }
 
 // BalanceResponse holds account balance details.
 type BalanceResponse struct {
-	TotalEval       string `json:"tot_evlu_amt"`   // 총평가금액
-	AvailableAmount string `json:"ord_psbl_cash"`  // 주문가능현금
-	ProfitRate      string `json:"evlu_pfls_rt"`   // 평가손익률
+	TotalEval       string `json:"tot_evlu_amt"`  // 총평가금액
+	AvailableAmount string `json:"ord_psbl_cash"` // 주문가능현금
+	ProfitRate      string `json:"evlu_pfls_rt"`  // 평가손익률
 }
 
 // OrderRequest is the payload for placing a buy/sell order.
 type OrderRequest struct {
-	StockCode  string `json:"pdno"`        // 종목코드
-	OrderDivn  string `json:"ord_dvsn"`    // 주문구분 (00=지정가, 01=시장가)
-	Qty        string `json:"ord_qty"`     // 주문수량
-	Price      string `json:"ord_unpr"`    // 주문단가 (시장가일 때 "0")
+	StockCode string `json:"pdno"`     // 종목코드
+	OrderDivn string `json:"ord_dvsn"` // 주문구분 (00=지정가, 01=시장가)
+	Qty       string `json:"ord_qty"`  // 주문수량
+	Price     string `json:"ord_unpr"` // 주문단가 (시장가일 때 "0")
 }
 
 // OrderResponse is returned by the KIS order API.
 type OrderResponse struct {
-	KISOrderID string `json:"odno"`      // KIS 주문번호
-	OrderTime  string `json:"ord_tmd"`   // 주문시각
+	KISOrderID string `json:"odno"`    // KIS 주문번호
+	OrderTime  string `json:"ord_tmd"` // 주문시각
 }
 
 // --- Public API methods ---
@@ -91,9 +91,9 @@ func (c *Client) GetStockPrice(ctx context.Context, stockCode string) (*StockPri
 	}
 
 	var result struct {
-		Output StockPriceResponse `json:"output"`
-		MsgCode string            `json:"msg_cd"`
-		Msg     string            `json:"msg1"`
+		Output  StockPriceResponse `json:"output"`
+		MsgCode string             `json:"msg_cd"`
+		Msg     string             `json:"msg1"`
 	}
 	if err := json.Unmarshal(raw, &result); err != nil {
 		c.logAPIError(endpoint, "PARSE_ERROR", string(raw))
@@ -114,9 +114,9 @@ func (c *Client) GetBalance(ctx context.Context) (*BalanceResponse, error) {
 	}
 
 	var result struct {
-		Output BalanceResponse `json:"output"`
-		MsgCode string         `json:"msg_cd"`
-		Msg     string         `json:"msg1"`
+		Output  BalanceResponse `json:"output"`
+		MsgCode string          `json:"msg_cd"`
+		Msg     string          `json:"msg1"`
 	}
 	if err := json.Unmarshal(raw, &result); err != nil {
 		c.logAPIError(endpoint, "PARSE_ERROR", string(raw))
@@ -147,7 +147,7 @@ func (c *Client) GetOrderHistory(ctx context.Context) ([]map[string]any, error) 
 	}
 
 	var result struct {
-		Output []map[string]any `json:"output1"`
+		Output  []map[string]any `json:"output1"`
 		MsgCode string           `json:"msg_cd"`
 	}
 	if err := json.Unmarshal(raw, &result); err != nil {

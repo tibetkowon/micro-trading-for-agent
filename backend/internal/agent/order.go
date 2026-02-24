@@ -15,8 +15,8 @@ type PlaceOrderRequest struct {
 	StockCode string
 	OrderType models.OrderType
 	Qty       int
-	Price     float64      // 0 for market order
-	OrderDivn string       // "00"=지정가, "01"=시장가
+	Price     float64 // 0 for market order
+	OrderDivn string  // "00"=지정가, "01"=시장가
 }
 
 // PlaceOrderResult is returned after successfully submitting an order.

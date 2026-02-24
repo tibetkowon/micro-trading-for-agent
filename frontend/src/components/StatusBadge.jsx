@@ -1,3 +1,5 @@
+import PropTypes from 'prop-types'
+
 const colors = {
   FILLED: 'bg-green-900 text-green-300',
   PENDING: 'bg-yellow-900 text-yellow-300',
@@ -11,4 +13,8 @@ export default function StatusBadge({ status }) {
       {status}
     </span>
   )
+}
+
+StatusBadge.propTypes = {
+  status: PropTypes.string.isRequired,
 }
