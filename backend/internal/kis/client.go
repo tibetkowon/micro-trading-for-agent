@@ -193,6 +193,15 @@ func (c *Client) PlaceSellOrder(ctx context.Context, req OrderRequest) (*OrderRe
 		"/uapi/domestic-stock/v1/trading/order-cash")
 }
 
+// GetRawBalance returns the raw JSON response from the balance endpoint.
+// Used for debugging field name mismatches.
+func (c *Client) GetRawBalance(ctx context.Context) ([]byte, error) {
+	endpoint := "/uapi/domestic-stock/v1/trading/inquire-psbl-order"
+	params := fmt.Sprintf("?CANO=%s&ACNT_PRDT_CD=%s&PDNO=&ORD_UNPR=&ORD_QTY=&OVRS_ICLD_YN=N&CMA_EVLU_AMT_ICLD_YN=N&ITEM_OVRS_EXCG_CD=",
+		c.accountNo, c.accountType)
+	return c.get(ctx, endpoint, params, c.trID("TTTC8908R", "VTTC8908R"))
+}
+
 // GetOrderHistory fetches recent order history.
 func (c *Client) GetOrderHistory(ctx context.Context) ([]map[string]any, error) {
 	endpoint := "/uapi/domestic-stock/v1/trading/inquire-daily-ccld"

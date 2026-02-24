@@ -144,6 +144,16 @@ func (h *Handler) GetSettings(c *gin.Context) {
 	})
 }
 
+// GET /api/debug/balance — KIS 잔고 API 원본 응답 확인용 (필드명 디버깅)
+func (h *Handler) DebugRawBalance(c *gin.Context) {
+	raw, err := h.client.GetRawBalance(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.Data(http.StatusOK, "application/json", raw)
+}
+
 // PUT /api/settings/mode — 모의투자/실전투자 전환
 func (h *Handler) SetMode(c *gin.Context) {
 	var req struct {
