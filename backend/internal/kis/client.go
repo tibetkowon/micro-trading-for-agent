@@ -198,16 +198,20 @@ func (c *Client) GetInquireBalance(ctx context.Context) (*InquireBalanceOutput2,
 		return nil, err
 	}
 
+	// output2 is an array in KIS API response — take the first element.
 	var result struct {
-		Output2 InquireBalanceOutput2 `json:"output2"`
-		MsgCode string                `json:"msg_cd"`
-		Msg     string                `json:"msg1"`
+		Output2 []InquireBalanceOutput2 `json:"output2"`
+		MsgCode string                  `json:"msg_cd"`
+		Msg     string                  `json:"msg1"`
 	}
 	if err := json.Unmarshal(raw, &result); err != nil {
 		c.logAPIError(endpoint, "PARSE_ERROR", string(raw))
 		return nil, fmt.Errorf("parse inquire balance: %w", err)
 	}
-	return &result.Output2, nil
+	if len(result.Output2) == 0 {
+		return &InquireBalanceOutput2{}, nil
+	}
+	return &result.Output2[0], nil
 }
 
 // PlaceBuyOrder places a buy order.

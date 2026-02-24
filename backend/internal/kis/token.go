@@ -129,6 +129,19 @@ func (tm *TokenManager) GetCurrentToken(ctx context.Context) (*models.Token, err
 	return &tok, nil
 }
 
+// EnsureToken reuses a valid token from DB if it has more than 1 hour remaining,
+// otherwise issues a new one. This prevents hitting KIS rate limits (1 issue/min)
+// on every server restart.
+func (tm *TokenManager) EnsureToken(ctx context.Context) (*models.Token, error) {
+	tok, err := tm.GetCurrentToken(ctx)
+	if err == nil && time.Until(tok.ExpiresAt) > time.Hour {
+		logger.Info("reusing existing KIS token from DB",
+			map[string]any{"expires_at": tok.ExpiresAt})
+		return tok, nil
+	}
+	return tm.IssueToken(ctx)
+}
+
 // StartAutoRefresh launches a background goroutine that refreshes the token
 // every tokenRefreshInterval (20 hours). Call Stop() to shut it down.
 func (tm *TokenManager) StartAutoRefresh(ctx context.Context) {
