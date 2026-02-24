@@ -51,7 +51,6 @@ func (db *DB) migrate() error {
 		`CREATE TABLE IF NOT EXISTS tokens (
 			id           INTEGER PRIMARY KEY AUTOINCREMENT,
 			access_token TEXT    NOT NULL,
-			is_mock      INTEGER NOT NULL DEFAULT 1,
 			issued_at    DATETIME NOT NULL DEFAULT (datetime('now')),
 			expires_at   DATETIME NOT NULL
 		)`,
@@ -90,9 +89,6 @@ func (db *DB) migrate() error {
 			return fmt.Errorf("exec migration: %w\nSQL: %s", err, s)
 		}
 	}
-
-	// Add is_mock column to existing tokens table if it doesn't exist yet.
-	_, _ = db.Exec(`ALTER TABLE tokens ADD COLUMN is_mock INTEGER NOT NULL DEFAULT 1`)
 
 	return nil
 }

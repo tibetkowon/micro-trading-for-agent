@@ -1,9 +1,7 @@
 package config
 
 import (
-	"fmt"
 	"os"
-	"strconv"
 
 	"github.com/joho/godotenv"
 )
@@ -15,8 +13,6 @@ type Config struct {
 	KISAccountNo   string
 	KISAccountType string
 	KISBaseURL     string
-	KISMockURL     string
-	KISIsMock      bool
 
 	DatabasePath string
 	ServerPort   string
@@ -35,27 +31,12 @@ func Load() (*Config, error) {
 		KISAccountNo:   mustEnv("KIS_ACCOUNT_NO"),
 		KISAccountType: getEnv("KIS_ACCOUNT_TYPE", "01"),
 		KISBaseURL:     getEnv("KIS_BASE_URL", "https://openapi.koreainvestment.com:9443"),
-		KISMockURL:     getEnv("KIS_MOCK_URL", "https://openapivts.koreainvestment.com:29443"),
 		DatabasePath:   getEnv("DATABASE_PATH", "./data/trading.db"),
 		ServerPort:     getEnv("SERVER_PORT", "8080"),
 		FrontendDist:   getEnv("FRONTEND_DIST_PATH", "./frontend/dist"),
 	}
 
-	isMock, err := strconv.ParseBool(getEnv("KIS_IS_MOCK", "true"))
-	if err != nil {
-		return nil, fmt.Errorf("invalid KIS_IS_MOCK value: %w", err)
-	}
-	cfg.KISIsMock = isMock
-
 	return cfg, nil
-}
-
-// BaseURL returns the active KIS API base URL depending on the mock flag.
-func (c *Config) BaseURL() string {
-	if c.KISIsMock {
-		return c.KISMockURL
-	}
-	return c.KISBaseURL
 }
 
 func mustEnv(key string) string {

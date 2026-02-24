@@ -137,7 +137,6 @@ func (h *Handler) GetSettings(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"is_mock":        h.client.IsMock(),
 		"account_no":     maskedAccount,
 		"kis_configured": h.cfg.KISAppKey != "" && h.cfg.KISAppSecret != "",
 		"account_type":   h.cfg.KISAccountType,
@@ -152,26 +151,4 @@ func (h *Handler) DebugRawBalance(c *gin.Context) {
 		return
 	}
 	c.Data(http.StatusOK, "application/json", raw)
-}
-
-// PUT /api/settings/mode — 모의투자/실전투자 전환
-func (h *Handler) SetMode(c *gin.Context) {
-	var req struct {
-		IsMock bool `json:"is_mock"`
-	}
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	if err := h.client.SetMock(c.Request.Context(), req.IsMock); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	mode := "실전투자"
-	if req.IsMock {
-		mode = "모의투자"
-	}
-	c.JSON(http.StatusOK, gin.H{"is_mock": req.IsMock, "message": mode + "로 전환되었습니다"})
 }

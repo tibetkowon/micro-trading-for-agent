@@ -34,9 +34,14 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Initialize KIS token manager and issue the first token.
-	tokenManager := kis.NewTokenManager(cfg.BaseURL(), cfg.KISIsMock, cfg.KISAppKey, cfg.KISAppSecret, db)
+	// Initialize KIS token manager.
+	tokenManager := kis.NewTokenManager(cfg.KISBaseURL, cfg.KISAppKey, cfg.KISAppSecret, db)
 	if cfg.KISAppKey != "" && cfg.KISAppSecret != "" {
+		// Invalidate cached tokens if credentials have changed since last run.
+		if err := tokenManager.InvalidateIfCredentialsChanged(ctx); err != nil {
+			logger.Warn("credential check failed — token cache may be stale",
+				map[string]any{"error": err.Error()})
+		}
 		if _, err := tokenManager.EnsureToken(ctx); err != nil {
 			logger.Warn("initial KIS token issue failed — API calls will fail until resolved",
 				map[string]any{"error": err.Error()})
@@ -49,8 +54,6 @@ func main() {
 
 	kisClient := kis.NewClient(
 		cfg.KISBaseURL,
-		cfg.KISMockURL,
-		cfg.KISIsMock,
 		cfg.KISAppKey,
 		cfg.KISAppSecret,
 		cfg.KISAccountNo,
@@ -75,7 +78,7 @@ func main() {
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 
 	go func() {
-		logger.Info("server starting", map[string]any{"port": cfg.ServerPort, "mock": cfg.KISIsMock})
+		logger.Info("server starting", map[string]any{"port": cfg.ServerPort})
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			fmt.Fprintf(os.Stderr, "server error: %v\n", err)
 			os.Exit(1)

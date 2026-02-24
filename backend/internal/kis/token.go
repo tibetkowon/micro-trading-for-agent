@@ -3,6 +3,7 @@ package kis
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -25,7 +26,6 @@ const (
 type TokenManager struct {
 	mu        sync.RWMutex
 	baseURL   string
-	isMock    bool
 	appKey    string
 	appSecret string
 	db        *database.DB
@@ -33,10 +33,9 @@ type TokenManager struct {
 }
 
 // NewTokenManager creates a new TokenManager.
-func NewTokenManager(baseURL string, isMock bool, appKey, appSecret string, db *database.DB) *TokenManager {
+func NewTokenManager(baseURL string, appKey, appSecret string, db *database.DB) *TokenManager {
 	return &TokenManager{
 		baseURL:   baseURL,
-		isMock:    isMock,
 		appKey:    appKey,
 		appSecret: appSecret,
 		db:        db,
@@ -44,12 +43,39 @@ func NewTokenManager(baseURL string, isMock bool, appKey, appSecret string, db *
 	}
 }
 
-// SetMode updates the base URL and mock flag (called when switching mock/real mode).
-func (tm *TokenManager) SetMode(baseURL string, isMock bool) {
-	tm.mu.Lock()
-	defer tm.mu.Unlock()
-	tm.baseURL = baseURL
-	tm.isMock = isMock
+// InvalidateIfCredentialsChanged clears the token cache when APP KEY or SECRET changes.
+// It computes a SHA-256 fingerprint of the current credentials and compares it with
+// the value stored in the settings table. If they differ, all tokens are deleted so
+// EnsureToken will issue a fresh one.
+func (tm *TokenManager) InvalidateIfCredentialsChanged(ctx context.Context) error {
+	h := sha256.Sum256([]byte(tm.appKey + ":" + tm.appSecret))
+	currentHash := fmt.Sprintf("%x", h)
+
+	var storedHash string
+	err := tm.db.QueryRowContext(ctx,
+		`SELECT value FROM settings WHERE key = 'kis_credentials_hash'`).Scan(&storedHash)
+
+	if err == nil && storedHash == currentHash {
+		// Credentials unchanged; existing tokens are valid.
+		return nil
+	}
+
+	// Credentials changed or not yet stored — clear all tokens.
+	if _, err := tm.db.ExecContext(ctx, `DELETE FROM tokens`); err != nil {
+		return fmt.Errorf("clear tokens: %w", err)
+	}
+
+	_, err = tm.db.ExecContext(ctx,
+		`INSERT INTO settings (key, value, updated_at)
+		 VALUES ('kis_credentials_hash', ?, datetime('now'))
+		 ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+		currentHash)
+	if err != nil {
+		return fmt.Errorf("update credentials hash: %w", err)
+	}
+
+	logger.Info("KIS credentials changed — token cache cleared", nil)
+	return nil
 }
 
 // issueTokenResponse is the KIS token API response schema.
@@ -104,14 +130,9 @@ func (tm *TokenManager) IssueToken(ctx context.Context) (*models.Token, error) {
 		return nil, fmt.Errorf("empty access token: %s", res.Msg)
 	}
 
-	tm.mu.RLock()
-	isMock := tm.isMock
-	tm.mu.RUnlock()
-
 	now := time.Now()
 	tok := &models.Token{
 		AccessToken: res.AccessToken,
-		IsMock:      isMock,
 		IssuedAt:    now,
 		ExpiresAt:   now.Add(time.Duration(res.ExpiresIn) * time.Second),
 	}
@@ -124,33 +145,28 @@ func (tm *TokenManager) IssueToken(ctx context.Context) (*models.Token, error) {
 	return tok, nil
 }
 
-// GetCurrentToken returns the most recent valid token for the current environment.
+// GetCurrentToken returns the most recent valid token.
 func (tm *TokenManager) GetCurrentToken(ctx context.Context) (*models.Token, error) {
-	tm.mu.RLock()
-	isMock := tm.isMock
-	tm.mu.RUnlock()
-
 	row := tm.db.QueryRowContext(ctx,
-		`SELECT id, access_token, is_mock, issued_at, expires_at
-		 FROM tokens WHERE is_mock = ? ORDER BY id DESC LIMIT 1`,
-		isMock)
+		`SELECT id, access_token, issued_at, expires_at
+		 FROM tokens ORDER BY id DESC LIMIT 1`)
 
 	var tok models.Token
-	err := row.Scan(&tok.ID, &tok.AccessToken, &tok.IsMock, &tok.IssuedAt, &tok.ExpiresAt)
+	err := row.Scan(&tok.ID, &tok.AccessToken, &tok.IssuedAt, &tok.ExpiresAt)
 	if err != nil {
 		return nil, fmt.Errorf("no token found: %w", err)
 	}
 	return &tok, nil
 }
 
-// EnsureToken reuses a valid token for the current environment if it has more than
-// 1 hour remaining, otherwise issues a new one.
-// Prevents hitting KIS rate limits (1 issue/min) on repeated restarts or mode switches.
+// EnsureToken reuses a valid token if it has more than 1 hour remaining,
+// otherwise issues a new one.
+// Prevents hitting KIS rate limits (1 issue/min) on repeated restarts.
 func (tm *TokenManager) EnsureToken(ctx context.Context) (*models.Token, error) {
 	tok, err := tm.GetCurrentToken(ctx)
 	if err == nil && time.Until(tok.ExpiresAt) > time.Hour {
 		logger.Info("reusing existing KIS token from DB",
-			map[string]any{"expires_at": tok.ExpiresAt, "is_mock": tok.IsMock})
+			map[string]any{"expires_at": tok.ExpiresAt})
 		return tok, nil
 	}
 	return tm.IssueToken(ctx)
@@ -186,8 +202,8 @@ func (tm *TokenManager) Stop() {
 
 func (tm *TokenManager) saveToken(tok *models.Token) error {
 	_, err := tm.db.Exec(
-		`INSERT INTO tokens (access_token, is_mock, issued_at, expires_at) VALUES (?, ?, ?, ?)`,
-		tok.AccessToken, tok.IsMock, tok.IssuedAt, tok.ExpiresAt,
+		`INSERT INTO tokens (access_token, issued_at, expires_at) VALUES (?, ?, ?)`,
+		tok.AccessToken, tok.IssuedAt, tok.ExpiresAt,
 	)
 	return err
 }

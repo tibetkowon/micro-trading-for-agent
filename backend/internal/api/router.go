@@ -22,7 +22,6 @@ func SetupRouter(h *Handler, frontendDist string) *gin.Engine {
 		api.POST("/orders", h.PlaceOrder)
 		api.GET("/logs/kis", h.GetKISLogs)
 		api.GET("/settings", h.GetSettings)
-		api.PUT("/settings/mode", h.SetMode)
 		api.GET("/debug/balance", h.DebugRawBalance)
 	}
 
