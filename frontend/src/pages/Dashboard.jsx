@@ -9,6 +9,16 @@ function fmt(n) {
 export default function Dashboard() {
   const { data, loading, error, refetch } = useApi('/api/balance')
 
+  const profitRate = data?.profit_rate
+  const profitColor =
+    profitRate && profitRate !== '-'
+      ? parseFloat(profitRate) > 0
+        ? 'text-red-400'
+        : parseFloat(profitRate) < 0
+        ? 'text-blue-400'
+        : ''
+      : ''
+
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
@@ -30,21 +40,33 @@ export default function Dashboard() {
       {loading ? (
         <p className="text-gray-500">로딩 중...</p>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <Card title="총 평가금액" value={fmt(data?.total_eval)} />
-          <Card title="주문 가능 금액" value={fmt(data?.available_amount)} />
+          <Card title="주문 가능 현금" value={fmt(data?.available_amount)} />
+          <Card title="매입 금액" value={fmt(data?.purchase_amt)} />
           <Card
-            title="평가손익률"
-            value={data?.profit_rate ? `${data.profit_rate}%` : '-'}
+            title="평가 손익"
+            value={fmt(data?.eval_profit_loss)}
+            sub={profitRate && profitRate !== '-' ? `수익률 ${profitRate}%` : undefined}
             className={
-              data?.profit_rate > 0
-                ? 'border-green-700'
-                : data?.profit_rate < 0
-                ? 'border-red-700'
+              profitRate && profitRate !== '-'
+                ? parseFloat(profitRate) > 0
+                  ? 'border-red-700'
+                  : parseFloat(profitRate) < 0
+                  ? 'border-blue-700'
+                  : ''
                 : ''
             }
           />
         </div>
+      )}
+
+      {data && (
+        <p className={`mt-4 text-sm font-semibold ${profitColor}`}>
+          {profitRate && profitRate !== '-'
+            ? `전체 수익률: ${profitRate}%`
+            : '보유 종목 없음'}
+        </p>
       )}
     </div>
   )

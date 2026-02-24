@@ -110,11 +110,17 @@ type StockPriceResponse struct {
 	Volume       string `json:"acml_vol"`       // 누적 거래량
 }
 
-// BalanceResponse holds account balance details.
-type BalanceResponse struct {
-	TotalEval       string `json:"tot_evlu_amt"`  // 총평가금액
+// AvailableOrderResponse holds response from inquire-psbl-order (매수가능조회).
+type AvailableOrderResponse struct {
 	AvailableAmount string `json:"ord_psbl_cash"` // 주문가능현금
-	ProfitRate      string `json:"evlu_pfls_rt"`  // 평가손익률
+}
+
+// InquireBalanceOutput2 holds account summary from inquire-balance output2 (주식잔고조회).
+type InquireBalanceOutput2 struct {
+	TotalEval      string `json:"tot_evlu_amt"`       // 총평가금액
+	DepositAmt     string `json:"dnca_tot_amt"`       // 예수금총금액
+	PurchaseAmt    string `json:"pchs_amt_smtl_amt"`  // 매입금액합계
+	EvalProfitLoss string `json:"evlu_pfls_smtl_amt"` // 평가손익합계금액
 }
 
 // OrderRequest is the payload for placing a buy/sell order.
@@ -156,10 +162,11 @@ func (c *Client) GetStockPrice(ctx context.Context, stockCode string) (*StockPri
 	return &result.Output, nil
 }
 
-// GetBalance fetches the current account balance.
-func (c *Client) GetBalance(ctx context.Context) (*BalanceResponse, error) {
+// GetAvailableOrder fetches available order amount (매수가능조회).
+func (c *Client) GetAvailableOrder(ctx context.Context) (*AvailableOrderResponse, error) {
 	endpoint := "/uapi/domestic-stock/v1/trading/inquire-psbl-order"
-	params := fmt.Sprintf("?CANO=%s&ACNT_PRDT_CD=%s&PDNO=&ORD_UNPR=&ORD_QTY=&OVRS_ICLD_YN=N&CMA_EVLU_AMT_ICLD_YN=N&ITEM_OVRS_EXCG_CD=",
+	// ORD_DVSN=01(시장가) 필수, PDNO/ORD_UNPR 공란 허용
+	params := fmt.Sprintf("?CANO=%s&ACNT_PRDT_CD=%s&PDNO=&ORD_UNPR=0&ORD_DVSN=01&CMA_EVLU_AMT_ICLD_YN=N&OVRS_ICLD_YN=N",
 		c.accountNo, c.accountType)
 
 	raw, err := c.get(ctx, endpoint, params, c.trID("TTTC8908R", "VTTC8908R"))
@@ -168,15 +175,39 @@ func (c *Client) GetBalance(ctx context.Context) (*BalanceResponse, error) {
 	}
 
 	var result struct {
-		Output  BalanceResponse `json:"output"`
-		MsgCode string          `json:"msg_cd"`
-		Msg     string          `json:"msg1"`
+		Output  AvailableOrderResponse `json:"output"`
+		MsgCode string                 `json:"msg_cd"`
+		Msg     string                 `json:"msg1"`
 	}
 	if err := json.Unmarshal(raw, &result); err != nil {
 		c.logAPIError(endpoint, "PARSE_ERROR", string(raw))
-		return nil, fmt.Errorf("parse balance: %w", err)
+		return nil, fmt.Errorf("parse available order: %w", err)
 	}
 	return &result.Output, nil
+}
+
+// GetInquireBalance fetches account balance summary (주식잔고조회).
+// output2 contains tot_evlu_amt (총평가금액) and profit/loss summary.
+func (c *Client) GetInquireBalance(ctx context.Context) (*InquireBalanceOutput2, error) {
+	endpoint := "/uapi/domestic-stock/v1/trading/inquire-balance"
+	params := fmt.Sprintf("?CANO=%s&ACNT_PRDT_CD=%s&AFHR_FLPR_YN=N&OFL_YN=&INQR_DVSN=01&UNPR_DVSN=01&FUND_STTL_ICLD_YN=N&FNCG_AMT_AUTO_RDPT_YN=N&PRCS_DVSN=00&CTX_AREA_FK100=&CTX_AREA_NK100=",
+		c.accountNo, c.accountType)
+
+	raw, err := c.get(ctx, endpoint, params, c.trID("TTTC8434R", "VTTC8434R"))
+	if err != nil {
+		return nil, err
+	}
+
+	var result struct {
+		Output2 InquireBalanceOutput2 `json:"output2"`
+		MsgCode string                `json:"msg_cd"`
+		Msg     string                `json:"msg1"`
+	}
+	if err := json.Unmarshal(raw, &result); err != nil {
+		c.logAPIError(endpoint, "PARSE_ERROR", string(raw))
+		return nil, fmt.Errorf("parse inquire balance: %w", err)
+	}
+	return &result.Output2, nil
 }
 
 // PlaceBuyOrder places a buy order.
@@ -193,13 +224,13 @@ func (c *Client) PlaceSellOrder(ctx context.Context, req OrderRequest) (*OrderRe
 		"/uapi/domestic-stock/v1/trading/order-cash")
 }
 
-// GetRawBalance returns the raw JSON response from the balance endpoint.
+// GetRawBalance returns the raw JSON response from the inquire-balance endpoint.
 // Used for debugging field name mismatches.
 func (c *Client) GetRawBalance(ctx context.Context) ([]byte, error) {
-	endpoint := "/uapi/domestic-stock/v1/trading/inquire-psbl-order"
-	params := fmt.Sprintf("?CANO=%s&ACNT_PRDT_CD=%s&PDNO=&ORD_UNPR=&ORD_QTY=&OVRS_ICLD_YN=N&CMA_EVLU_AMT_ICLD_YN=N&ITEM_OVRS_EXCG_CD=",
+	endpoint := "/uapi/domestic-stock/v1/trading/inquire-balance"
+	params := fmt.Sprintf("?CANO=%s&ACNT_PRDT_CD=%s&AFHR_FLPR_YN=N&OFL_YN=&INQR_DVSN=01&UNPR_DVSN=01&FUND_STTL_ICLD_YN=N&FNCG_AMT_AUTO_RDPT_YN=N&PRCS_DVSN=00&CTX_AREA_FK100=&CTX_AREA_NK100=",
 		c.accountNo, c.accountType)
-	return c.get(ctx, endpoint, params, c.trID("TTTC8908R", "VTTC8908R"))
+	return c.get(ctx, endpoint, params, c.trID("TTTC8434R", "VTTC8434R"))
 }
 
 // GetOrderHistory fetches recent order history.
