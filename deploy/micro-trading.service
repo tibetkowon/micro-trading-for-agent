@@ -1,0 +1,20 @@
+[Unit]
+Description=Micro Trading For Agent
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/service/micro-trading-for-agent
+ExecStart=/service/micro-trading-for-agent/server
+EnvironmentFile=/service/micro-trading-for-agent/.env
+Restart=on-failure
+RestartSec=5s
+
+# 로그는 journald로 수집
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=micro-trading
+
+[Install]
+WantedBy=multi-user.target
