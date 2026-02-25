@@ -12,7 +12,7 @@ import (
 
 // AccountBalance holds the parsed account balance for agent decisions.
 //
-//   - TradableAmount    : 거래가능금액 (ord_psbl_cash / 주문가능현금) — TTTC8908R 별도 조회
+//   - TradableAmount    : 거래가능금액 (dnca_tot_amt / 예수금총금액) — 매수 판단 기준 현금
 //   - WithdrawableAmount: 출금가능금액 (prvs_rcdl_excc_amt / D+2 정산금액) — 실제 출금 가능한 금액
 type AccountBalance struct {
 	TotalEval          float64 `json:"total_eval"`
@@ -23,9 +23,8 @@ type AccountBalance struct {
 	ProfitRate         string  `json:"profit_rate"`
 }
 
-// GetAccountBalance fetches account balance via two KIS API calls:
-//   - output2 → 총평가금액, 출금가능금액(prvs_rcdl_excc_amt), 평가손익
-//   - TTTC8908R → 거래가능금액(ord_psbl_cash / 주문가능현금)
+// GetAccountBalance fetches account balance via KIS inquire-balance:
+//   - output2 → 총평가금액, 거래가능금액(dnca_tot_amt), 출금가능금액(prvs_rcdl_excc_amt), 평가손익
 func GetAccountBalance(ctx context.Context, client *kis.Client, db *database.DB) (*AccountBalance, error) {
 	summary, err := client.GetInquireBalance(ctx)
 	if err != nil {
@@ -33,15 +32,8 @@ func GetAccountBalance(ctx context.Context, client *kis.Client, db *database.DB)
 	}
 
 	totalEval, _ := strconv.ParseFloat(summary.TotalEval, 64)
-	tradable, _ := strconv.ParseFloat(summary.DepositAmt, 64)          // fallback: dnca_tot_amt
-	withdrawable, _ := strconv.ParseFloat(summary.WithdrawableAmt, 64) // prvs_rcdl_excc_amt = 출금가능금액
-
-	// 주문가능현금(ord_psbl_cash) 조회 — dnca_tot_amt보다 정확한 실거래 가능 금액
-	if avail, err := client.GetAvailableOrder(ctx); err == nil {
-		if v, err2 := strconv.ParseFloat(avail.AvailableAmount, 64); err2 == nil {
-			tradable = v
-		}
-	}
+	tradable, _ := strconv.ParseFloat(summary.DepositAmt, 64)          // dnca_tot_amt = 예수금총금액 (거래가능금액)
+	withdrawable, _ := strconv.ParseFloat(summary.WithdrawableAmt, 64) // prvs_rcdl_excc_amt = 출금가능금액 (D+2)
 	purchaseAmt, _ := strconv.ParseFloat(summary.PurchaseAmt, 64)
 	evalProfitLoss, _ := strconv.ParseFloat(summary.EvalProfitLoss, 64)
 
