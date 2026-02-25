@@ -16,8 +16,8 @@ import (
 //   - WithdrawableAmount: 출금가능금액 (prvs_rcdl_excc_amt / D+2 정산금액) — 실제 출금 가능한 금액
 type AccountBalance struct {
 	TotalEval          float64 `json:"total_eval"`
-	TradableAmount     float64 `json:"tradable_amount"`      // 거래가능금액 (에이전트 매수 판단 기준)
-	WithdrawableAmount float64 `json:"withdrawable_amount"`  // 출금가능금액 (D+2)
+	TradableAmount     float64 `json:"tradable_amount"`     // 거래가능금액 (에이전트 매수 판단 기준)
+	WithdrawableAmount float64 `json:"withdrawable_amount"` // 출금가능금액 (D+2)
 	PurchaseAmt        float64 `json:"purchase_amt"`
 	EvalProfitLoss     float64 `json:"eval_profit_loss"`
 	ProfitRate         string  `json:"profit_rate"`
@@ -32,7 +32,7 @@ func GetAccountBalance(ctx context.Context, client *kis.Client, db *database.DB)
 	}
 
 	totalEval, _ := strconv.ParseFloat(summary.TotalEval, 64)
-	tradable, _ := strconv.ParseFloat(summary.DepositAmt, 64)       // dnca_tot_amt = 거래가능금액
+	tradable, _ := strconv.ParseFloat(summary.DepositAmt, 64)          // dnca_tot_amt = 거래가능금액
 	withdrawable, _ := strconv.ParseFloat(summary.WithdrawableAmt, 64) // prvs_rcdl_excc_amt = 출금가능금액
 	purchaseAmt, _ := strconv.ParseFloat(summary.PurchaseAmt, 64)
 	evalProfitLoss, _ := strconv.ParseFloat(summary.EvalProfitLoss, 64)
