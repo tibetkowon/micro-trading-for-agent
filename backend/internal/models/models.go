@@ -21,18 +21,18 @@ const (
 type OrderStatus string
 
 const (
-	OrderStatusPending          OrderStatus = "PENDING"
-	OrderStatusFilled           OrderStatus = "FILLED"
-	OrderStatusPartiallyFilled  OrderStatus = "PARTIALLY_FILLED"
-	OrderStatusCancelled        OrderStatus = "CANCELLED"
-	OrderStatusFailed           OrderStatus = "FAILED"
+	OrderStatusPending         OrderStatus = "PENDING"
+	OrderStatusFilled          OrderStatus = "FILLED"
+	OrderStatusPartiallyFilled OrderStatus = "PARTIALLY_FILLED"
+	OrderStatusCancelled       OrderStatus = "CANCELLED"
+	OrderStatusFailed          OrderStatus = "FAILED"
 )
 
 // Order represents a single stock trade order.
 type Order struct {
 	ID          int64       `json:"id"`
 	StockCode   string      `json:"stock_code"`
-	StockName   string      `json:"stock_name"`   // 종목명 (KIS 히스토리 동기화 시 채워짐)
+	StockName   string      `json:"stock_name"` // 종목명 (KIS 히스토리 동기화 시 채워짐)
 	OrderType   OrderType   `json:"order_type"`
 	Qty         int         `json:"qty"`
 	Price       float64     `json:"price"`
