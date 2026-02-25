@@ -51,5 +51,7 @@ Always trigger the following skills under their specific conditions by reading a
    - **Action:** Update the project structure map in `docs/architecture.md`.
 8. **README Update (`.claude/skills/update_readme.md`):** - **Trigger:** After major milestones or initial setup. 
    - **Action:** Update the root `README.md` to reflect the current project state.
-9. **Context Evolution (`.claude/skills/manage_skills.md`):** - **Trigger:** When discovering new API quirks, project rules, or recurring patterns. 
+9. **Context Evolution (`.claude/skills/manage_skills.md`):** - **Trigger:** When discovering new API quirks, project rules, or recurring patterns.
    - **Action:** Document them as new skills or context files so they are not forgotten.
+10. **KIS API 구현 (`.claude/skills/implement_kis_feature.md`):** - **Trigger:** KIS API 신규 기능 구현 또는 기존 기능 개선 시.
+   - **Action:** `docs/kis-api/` 에서 관련 명세 문서(기본시세/순위분석/종목정보/주문계좌)를 읽고 올바른 스펙으로 구현.
