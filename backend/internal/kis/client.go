@@ -67,9 +67,9 @@ type AvailableOrderResponse struct {
 
 // InquireBalanceOutput2 holds account summary from inquire-balance output2 (TTTC8434R).
 type InquireBalanceOutput2 struct {
-	TotalEval      string `json:"tot_evlu_amt"`          // 총평가금액
-	DepositAmt     string `json:"dnca_tot_amt"`          // 예수금총금액 = 출금가능금액
-	AssetChangeAmt string `json:"asst_icdc_amt"`         // 자산증감액
+	TotalEval      string `json:"tot_evlu_amt"`           // 총평가금액
+	DepositAmt     string `json:"dnca_tot_amt"`           // 예수금총금액 = 출금가능금액
+	AssetChangeAmt string `json:"asst_icdc_amt"`          // 자산증감액
 	PrevTotalAsset string `json:"bfdy_tot_asst_evlu_amt"` // 전일총자산평가금액 (수익률 계산용)
 }
 
