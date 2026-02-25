@@ -32,7 +32,7 @@ func GetAccountBalance(ctx context.Context, client *kis.Client, db *database.DB)
 	}
 
 	totalEval, _ := strconv.ParseFloat(summary.TotalEval, 64)
-	withdrawable, _ := strconv.ParseFloat(summary.DepositAmt, 64)     // dnca_tot_amt = 출금가능금액
+	withdrawable, _ := strconv.ParseFloat(summary.DepositAmt, 64) // dnca_tot_amt = 출금가능금액
 	assetChangeAmt, _ := strconv.ParseFloat(summary.AssetChangeAmt, 64)
 	prevTotal, _ := strconv.ParseFloat(summary.PrevTotalAsset, 64)
 
