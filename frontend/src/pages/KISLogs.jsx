@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { useApi } from '../hooks/useApi'
 
 function fmtDate(s) {
@@ -7,8 +8,23 @@ function fmtDate(s) {
 
 export default function KISLogs() {
   const { data, loading, error, refetch } = useApi('/api/logs/kis?limit=100')
+  const [deletingIds, setDeletingIds] = useState(new Set())
 
   const logs = data?.logs || []
+
+  async function handleDelete(id) {
+    setDeletingIds((prev) => new Set(prev).add(id))
+    try {
+      await fetch(`/api/logs/kis/${id}`, { method: 'DELETE' })
+      refetch()
+    } finally {
+      setDeletingIds((prev) => {
+        const next = new Set(prev)
+        next.delete(id)
+        return next
+      })
+    }
+  }
 
   return (
     <div>
@@ -46,7 +62,16 @@ export default function KISLogs() {
                   </span>
                   <span className="text-xs text-gray-500 font-mono">{log.endpoint}</span>
                 </div>
-                <span className="text-xs text-gray-500">{fmtDate(log.timestamp)}</span>
+                <div className="flex items-center gap-3">
+                  <span className="text-xs text-gray-500">{fmtDate(log.timestamp)}</span>
+                  <button
+                    onClick={() => handleDelete(log.id)}
+                    disabled={deletingIds.has(log.id)}
+                    className="text-xs px-2 py-0.5 text-gray-500 hover:text-red-400 hover:bg-red-900/20 rounded disabled:opacity-40 transition-colors"
+                  >
+                    {deletingIds.has(log.id) ? '...' : '삭제'}
+                  </button>
+                </div>
               </div>
               {log.error_message && (
                 <p className="text-sm text-gray-300 mt-2">{log.error_message}</p>

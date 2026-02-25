@@ -45,7 +45,7 @@ export default function Dashboard() {
           <Card
             title="거래가능금액"
             value={fmt(data?.tradable_amount)}
-            sub="예수금총금액"
+            sub="주문가능금액"
           />
           <Card
             title="출금가능금액"

@@ -44,11 +44,15 @@ npm run dev
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/api/balance` | 계좌 잔고 조회 |
-| GET | `/api/orders` | 주문 내역 조회 |
+| GET | `/api/positions` | 실시간 보유 종목 조회 |
+| GET | `/api/orders` | 주문 내역 조회 (`?sync=true` 로 KIS 체결 동기화) |
 | POST | `/api/orders` | 수동 주문 (테스트용) |
-| GET | `/api/logs/kis` | KIS API 에러 로그 |
+| DELETE | `/api/orders/:id` | 주문 단건 삭제 |
+| GET | `/api/logs/kis` | KIS API 에러 로그 (`?summary=true` 로 raw 제외) |
+| DELETE | `/api/logs/kis/:id` | 에러 로그 단건 삭제 |
+| GET | `/api/stock/:code` | 종목 현재가 + MA5/MA20 |
+| GET | `/api/stock/:code/chart` | 캔들 차트 (`?interval=1m\|5m\|1h`) |
 | GET | `/api/settings` | 설정 조회 (민감 정보 마스킹) |
-| PUT | `/api/settings` | 설정 업데이트 |
 | GET | `/health` | 헬스 체크 |
 
 ## Project Structure

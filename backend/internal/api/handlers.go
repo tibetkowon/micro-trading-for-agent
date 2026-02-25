@@ -35,12 +35,18 @@ func (h *Handler) GetBalance(c *gin.Context) {
 	c.JSON(http.StatusOK, bal)
 }
 
-// GET /api/orders
+// GET /api/orders?sync=true
+// sync=true 이면 KIS 체결 내역을 먼저 동기화 (PENDING → FILLED/PARTIALLY_FILLED 갱신)
 func (h *Handler) GetOrders(c *gin.Context) {
 	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "50"))
 	offset, _ := strconv.Atoi(c.DefaultQuery("offset", "0"))
 	if limit <= 0 || limit > 200 {
 		limit = 50
+	}
+
+	if c.Query("sync") == "true" {
+		// 오류가 있어도 DB 조회는 계속 진행
+		_, _ = agent.GetOrderHistory(c.Request.Context(), h.client, h.db)
 	}
 
 	orders, err := agent.GetLocalOrderHistory(c.Request.Context(), h.db, limit, offset)
@@ -52,6 +58,44 @@ func (h *Handler) GetOrders(c *gin.Context) {
 		orders = []models.Order{}
 	}
 	c.JSON(http.StatusOK, gin.H{"orders": orders, "limit": limit, "offset": offset})
+}
+
+// DELETE /api/orders/:id
+func (h *Handler) DeleteOrder(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		return
+	}
+	res, err := h.db.ExecContext(c.Request.Context(), `DELETE FROM orders WHERE id = ?`, id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "order not found"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"deleted": id})
+}
+
+// DELETE /api/logs/kis/:id
+func (h *Handler) DeleteKISLog(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		return
+	}
+	res, err := h.db.ExecContext(c.Request.Context(), `DELETE FROM kis_api_logs WHERE id = ?`, id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "log not found"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"deleted": id})
 }
 
 // POST /api/orders — manual order for testing

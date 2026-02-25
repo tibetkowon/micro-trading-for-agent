@@ -4,9 +4,11 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"time"
 
 	"github.com/micro-trading-for-agent/backend/internal/database"
 	"github.com/micro-trading-for-agent/backend/internal/kis"
+	"github.com/micro-trading-for-agent/backend/internal/logger"
 	"github.com/micro-trading-for-agent/backend/internal/models"
 )
 
@@ -55,6 +57,35 @@ func GetOrderHistory(ctx context.Context, client *kis.Client, db *database.DB) (
 	}
 
 	return history, nil
+}
+
+// StartOrderSyncScheduler runs GetOrderHistory every interval in a background goroutine.
+// It skips the sync if there are no PENDING/PARTIALLY_FILLED orders to avoid unnecessary KIS API calls.
+// The goroutine stops when ctx is cancelled (aligned with server graceful shutdown).
+func StartOrderSyncScheduler(ctx context.Context, client *kis.Client, db *database.DB, interval time.Duration) {
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				// 미체결 주문이 없으면 API 호출 생략
+				var count int
+				_ = db.QueryRowContext(ctx,
+					`SELECT COUNT(*) FROM orders WHERE status IN ('PENDING','PARTIALLY_FILLED')`).Scan(&count)
+				if count == 0 {
+					continue
+				}
+				if _, err := GetOrderHistory(ctx, client, db); err != nil {
+					logger.Warn("order sync failed", map[string]any{"error": err.Error()})
+				} else {
+					logger.Info("order sync completed", map[string]any{"pending_before": count})
+				}
+			}
+		}
+	}()
 }
 
 // GetLocalOrderHistory returns paginated orders from the local database.
