@@ -9,6 +9,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/micro-trading-for-agent/backend/internal/agent"
 	"github.com/micro-trading-for-agent/backend/internal/api"
 	"github.com/micro-trading-for-agent/backend/internal/config"
 	"github.com/micro-trading-for-agent/backend/internal/database"
@@ -61,6 +62,11 @@ func main() {
 		tokenManager,
 		db,
 	)
+
+	if cfg.KISAppKey != "" && cfg.KISAppSecret != "" {
+		agent.StartOrderSyncScheduler(ctx, kisClient, db, 3*time.Minute)
+		logger.Info("order sync scheduler started", map[string]any{"interval": "3m"})
+	}
 
 	handler := api.NewHandler(db, kisClient, tokenManager, cfg)
 	router := api.SetupRouter(handler, cfg.FrontendDist)
