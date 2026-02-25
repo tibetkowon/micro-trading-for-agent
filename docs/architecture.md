@@ -1,6 +1,6 @@
 # Project Architecture
 
-> Last updated: 2026-02-25
+> Last updated: 2026-02-25 (3)
 
 ## Directory Tree
 
@@ -34,9 +34,9 @@ micro-trading-for-agent/
 │   │   │   ├── chart.go        # GetChart: OHLCV candles for 1m/5m/1h with pagination & aggregation
 │   │   │   ├── balance.go      # Account balance fetch + DB snapshot
 │   │   │   ├── order.go        # Place buy/sell orders; persist to orders table
-│   │   │   └── history.go      # Sync KIS execution history to local DB
+│   │   │   └── history.go      # Sync KIS execution history to local DB; StartOrderSyncScheduler (3-min ticker)
 │   │   └── api/
-│   │       ├── handlers.go     # HTTP handler functions (stock, chart, balance, orders, logs, settings, debug)
+│   │       ├── handlers.go     # HTTP handler functions (stock, chart, balance, orders CRUD, logs CRUD, settings, debug)
 │   │       └── router.go       # gin.Engine setup; route registration; SPA fallback
 │   ├── data/                   # SQLite .db files (git-ignored)
 │   └── go.mod                  # Go module definition
@@ -101,7 +101,7 @@ micro-trading-for-agent/
 
 ### `backend/internal/agent`
 - **Role:** AI agent action functions. Bridges KIS API data with DB persistence for the trading loop.
-- **Put here:** `GetStockInfo`, `GetAccountBalance`, `PlaceOrder`, `GetOrderHistory`.
+- **Put here:** `GetStockInfo`, `GetAccountBalance`, `PlaceOrder`, `GetOrderHistory`, `StartOrderSyncScheduler`.
 - **Do NOT put here:** HTTP routing, raw KIS API calls (use `kis.Client`).
 
 ### `backend/internal/api`

@@ -4,6 +4,45 @@
 
 ---
 
+## 2026-02-25 (3)
+
+### [Feature] 주문/로그 개별 삭제 + KIS 체결 자동 동기화
+
+**Description:**
+주문 내역과 KIS 에러 로그에 개별 삭제 기능을 추가하고, 주문 체결 상태가 자동으로 갱신되지 않던 버그를 해결했습니다.
+
+**[Feature] 개별 삭제 API**
+- `DELETE /api/orders/:id` — orders 테이블 단건 삭제
+- `DELETE /api/logs/kis/:id` — kis_api_logs 테이블 단건 삭제
+
+**[Feature] KIS 체결 동기화**
+- `GET /api/orders?sync=true` — KIS API에서 최신 체결내역 조회 후 DB 갱신, 이후 목록 반환
+  - PENDING → FILLED / PARTIALLY_FILLED 상태 자동 업데이트
+  - filled_price (평균체결가) 갱신
+
+**[Feature] 3분 주기 백그라운드 스케줄러**
+- `agent.StartOrderSyncScheduler(ctx, client, db, 3*time.Minute)` — Go `time.Ticker` 기반 고루틴
+- PENDING/PARTIALLY_FILLED 주문이 없으면 KIS API 호출 생략 (TPS 절약)
+- 서버 `ctx` 취소 시 graceful 종료 (시스템 cron 불필요)
+- KIS 키 설정 시 서버 시작과 함께 자동 실행
+
+**[Feature] 프론트엔드 UI 개선**
+- Orders: 각 행마다 삭제 버튼 + "KIS 동기화" 버튼 추가 (수동 즉시 동기화)
+- KISLogs: 각 카드마다 삭제 버튼 추가
+
+**Files Touched:**
+- `backend/internal/agent/history.go` — `StartOrderSyncScheduler()` 추가
+- `backend/cmd/server/main.go` — KIS 키 있을 때 스케줄러 자동 시작
+- `backend/internal/api/handlers.go` — `GetOrders` sync 파라미터, `DeleteOrder`, `DeleteKISLog` 핸들러 추가
+- `backend/internal/api/router.go` — DELETE 라우트 2개 추가
+- `frontend/src/pages/Orders.jsx` — 삭제 버튼, KIS 동기화 버튼
+- `frontend/src/pages/KISLogs.jsx` — 삭제 버튼
+
+**Pending/Next Steps:**
+- 삭제 시 확인 다이얼로그(confirm) 추가 여부 검토
+
+---
+
 ## 2026-02-25 (2)
 
 ### [Fix] KIS API 버그 수정 및 계좌잔액/주문내역/포지션 전면 개선
