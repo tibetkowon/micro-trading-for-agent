@@ -4,6 +4,66 @@
 
 ---
 
+## 2026-02-25 (2)
+
+### [Fix] KIS API 버그 수정 및 계좌잔액/주문내역/포지션 전면 개선
+
+**Description:**
+보고된 Critical/Important/Minor 버그들을 모두 수정했습니다.
+
+**[Critical] APBK0013 오파싱 버그**
+- `msg_cd != "MABC000"` 조건을 `rt_cd != "0"` 기준으로 교체
+- `rt_cd="0"` 이 KIS 공식 성공 기준 (APBK0013, MABC000 등 계좌 유형별 msg_cd 무관)
+- 성공 주문이 DB에 FAILED로 기록되는 버그 해결
+
+**[Critical] KIS TR-ID 신규 코드 교체**
+- 매수: `TTTC0802U` → `TTTC0012U`, 매도: `TTTC0801U` → `TTTC0011U`
+
+**[Fix] 계좌잔액 전면 수정 (에이전트 + 프론트 동시)**
+- 거래가능금액: `ord_psbl_cash`(D+2 정산) → `dnca_tot_amt`(예수금총금액)으로 수정
+- 출금가능금액(`prvs_rcdl_excc_amt`, D+2) 신규 필드 추가
+- `GetAvailableOrder()` 호출 제거 → `inquire-balance` 단일 호출로 통합
+- 에이전트도 동일 `GetAccountBalance()` 사용이므로 동시 수정됨
+
+**[Feature] 포지션 실시간 동기화**
+- `GET /api/positions` 추가: `inquire-balance output1` 기반 실시간 보유 종목 조회
+- 종목코드/종목명/보유수량/매입평균가/현재가/평가손익/평가수익률 반환
+
+**[Feature] 주문내역 종목명 + 체결가 표시**
+- `orders` 테이블에 `stock_name`, `filled_price` 컬럼 추가 (ALTER TABLE 마이그레이션)
+- `GetOrderHistory()` 동기화 시 `prdt_name`→`stock_name`, `avg_prvs`→`filled_price` 저장
+- `PARTIALLY_FILLED` 부분체결 상태 추가 (체결수량 < 주문수량 판별)
+
+**[Fix] 5분봉 차트 범위 확대**
+- 150분(2.5h) → 390분(장 전체 6.5h, 78개 5분봉)
+
+**[Feature] 에러 로그 요약 모드**
+- `GET /api/logs/kis?summary=true` 파라미터 추가 (`raw_response` 제외)
+
+**[Fix] 프론트엔드 화면 수정**
+- Dashboard: 거래가능금액/출금가능금액 카드 분리 표시
+- Orders: 종목명+종목코드 표시, 체결가 강조(노란색), 상태 한글 레이블
+- StatusBadge: PARTIALLY_FILLED(부분체결) 추가
+
+**Files Touched:**
+- `backend/internal/kis/client.go` — rt_cd 성공 판정, TR-ID 교체, HoldingItem/GetHoldings 추가, InquireBalanceOutput2에 WithdrawableAmt 추가
+- `backend/internal/agent/balance.go` — TradableAmount/WithdrawableAmount 추가, GetAvailableOrder 제거
+- `backend/internal/agent/history.go` — stock_name/filled_price 동기화, PARTIALLY_FILLED 판별
+- `backend/internal/agent/chart.go` — 5m 범위 150→390분
+- `backend/internal/models/models.go` — StockName, FilledPrice, PARTIALLY_FILLED 추가
+- `backend/internal/database/db.go` — orders 컬럼 추가, ALTER TABLE 마이그레이션
+- `backend/internal/api/handlers.go` — GetPositions 핸들러, 로그 summary 파라미터
+- `backend/internal/api/router.go` — /api/positions 라우트 추가
+- `frontend/src/pages/Dashboard.jsx` — 거래가능/출금가능금액 카드 분리
+- `frontend/src/pages/Orders.jsx` — 종목명, 체결가 표시
+- `frontend/src/components/StatusBadge.jsx` — PARTIALLY_FILLED, 한글 레이블
+
+**Pending/Next Steps:**
+- 실제 KIS API 연동 후 `dnca_tot_amt` vs KIS 앱 "거래가능금액" 수치 재확인
+- 포지션 페이지(`/positions`) 프론트엔드 UI 추가 (현재 API만 구현됨)
+
+---
+
 ## 2026-02-25
 
 ### [Feature] 종목 현재가 + MA5/MA20 + 캔들 차트 API 추가

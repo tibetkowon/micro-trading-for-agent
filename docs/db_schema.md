@@ -1,7 +1,7 @@
 # Database Schema
 
 > Engine: SQLite (WAL mode, foreign keys enabled)
-> Last updated: 2026-02-25
+> Last updated: 2026-02-25 (rev 2)
 
 ---
 
@@ -43,10 +43,12 @@
 |--------|------|-------------|-------------|
 | `id` | INTEGER | PRIMARY KEY AUTOINCREMENT | Surrogate key |
 | `stock_code` | TEXT | NOT NULL | KIS stock code (e.g., `005930` for Samsung Electronics) |
+| `stock_name` | TEXT | NOT NULL, DEFAULT '' | Korean stock name (e.g., `삼성전자`); populated by `GetOrderHistory()` sync from KIS `prdt_name` |
 | `order_type` | TEXT | NOT NULL, CHECK IN ('BUY','SELL') | Direction of the trade |
-| `qty` | INTEGER | NOT NULL, CHECK > 0 | Number of shares |
-| `price` | REAL | NOT NULL, CHECK >= 0 | Order price per share; 0 = market order |
-| `status` | TEXT | NOT NULL, DEFAULT 'PENDING', CHECK IN ('PENDING','FILLED','CANCELLED','FAILED') | Lifecycle status |
+| `qty` | INTEGER | NOT NULL, CHECK > 0 | Number of shares ordered |
+| `price` | REAL | NOT NULL, CHECK >= 0 | Order price per share at submission; 0 = market order |
+| `filled_price` | REAL | NOT NULL, DEFAULT 0 | Average execution price (`avg_prvs` from KIS); populated after fill |
+| `status` | TEXT | NOT NULL, DEFAULT 'PENDING', CHECK IN ('PENDING','FILLED','PARTIALLY_FILLED','CANCELLED','FAILED') | Lifecycle status; `PARTIALLY_FILLED` when `tot_ccld_qty < ord_qty` |
 | `kis_order_id` | TEXT | NOT NULL, DEFAULT '' | KIS-assigned order number (`odno`); populated after submission |
 | `created_at` | DATETIME | NOT NULL, DEFAULT `datetime('now')` | Order creation timestamp |
 
@@ -60,7 +62,7 @@
 |--------|------|-------------|-------------|
 | `id` | INTEGER | PRIMARY KEY AUTOINCREMENT | Surrogate key |
 | `total_eval` | REAL | NOT NULL, DEFAULT 0 | Total portfolio evaluation amount (KRW) |
-| `available_amount` | REAL | NOT NULL, DEFAULT 0 | Cash available for new orders (KRW) |
+| `available_amount` | REAL | NOT NULL, DEFAULT 0 | 거래가능금액 (`dnca_tot_amt` / 예수금총금액, KRW); 에이전트 매수 판단 기준 |
 | `recorded_at` | DATETIME | NOT NULL, DEFAULT `datetime('now')` | Snapshot timestamp |
 
 ---
