@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/micro-trading-for-agent/backend/internal/database"
@@ -17,6 +18,35 @@ type PlaceOrderRequest struct {
 	Qty       int
 	Price     float64 // 0 for market order
 	OrderDivn string  // "00"=지정가, "01"=시장가
+}
+
+// OrderFeasibility is returned by CheckOrderFeasibility.
+type OrderFeasibility struct {
+	OrderableQty  int     // TTTC8908R ord_psbl_qty — 0이면 주문 불가
+	AvailableCash float64 // TTTC8908R ord_psbl_cash — 재선정 시 예산 기준
+}
+
+// CheckOrderFeasibility calls TTTC8908R for a specific stock and returns
+// how many shares can be bought at market price.
+//
+// Agent flow:
+//
+//	qty, _ := CheckOrderFeasibility(ctx, client, "005930")
+//	if qty.OrderableQty > 0 { PlaceOrder(..., qty.OrderableQty) }
+//	else                     { re-select stock using qty.AvailableCash }
+func CheckOrderFeasibility(ctx context.Context, client *kis.Client, stockCode string) (*OrderFeasibility, error) {
+	resp, err := client.GetAvailableOrder(ctx, stockCode)
+	if err != nil {
+		return nil, fmt.Errorf("GetAvailableOrder(%s): %w", stockCode, err)
+	}
+
+	qty, _ := strconv.Atoi(resp.OrderableQty)
+	cash, _ := strconv.ParseFloat(resp.AvailableCash, 64)
+
+	return &OrderFeasibility{
+		OrderableQty:  qty,
+		AvailableCash: cash,
+	}, nil
 }
 
 // PlaceOrderResult is returned after successfully submitting an order.

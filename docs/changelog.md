@@ -4,6 +4,47 @@
 
 ---
 
+## 2026-02-25 (4)
+
+### [Refactor] 대시보드/잔고 API TTTC8434R 단일 호출로 최적화 + 에이전트 주문 흐름 개선
+
+**Description:**
+잔고 대시보드를 TTTC8434R(주식잔고조회) 단일 API 호출로 단순화하고, 에이전트 주문 흐름에 TTTC8908R(매수가능조회) 종목별 수량 확인 단계를 추가했습니다.
+
+**배경:**
+- TTTC8434R의 `asst_icdc_erng_rt`(자산증감수익률)는 KIS가 "데이터 미제공" 처리 → 백엔드에서 직접 계산
+- TTTC8908R은 특정 종목·가격·수수료를 반영한 정확한 주문가능수량을 반환하므로 에이전트 주문 직전에 호출이 적절
+
+**[Refactor] backend/internal/kis/client.go**
+- `InquireBalanceOutput2`: `asst_icdc_amt`(자산증감액), `bfdy_tot_asst_evlu_amt`(전일총자산평가금액) 추가; 매입금액/평가손익 제거
+- `AvailableOrderResponse`: `ord_psbl_qty`(주문가능수량) + `ord_psbl_cash`(주문가능현금)으로 재설계
+- `GetAvailableOrder(ctx, stockCode string)`: 종목코드 파라미터 추가 (에이전트 주문 전 종목별 호출 목적)
+
+**[Refactor] backend/internal/agent/balance.go**
+- `AccountBalance` 구조체: `tradable_amount` 제거, `asset_change_amt` + `asset_change_rate` 추가
+- `GetAccountBalance`: TTTC8434R 단일 호출로 대시보드 데이터 완성; `GetAvailableOrder` 호출 제거
+- 자산증감수익률 계산: `asst_icdc_amt / bfdy_tot_asst_evlu_amt × 100`
+
+**[Feature] backend/internal/agent/order.go**
+- `CheckOrderFeasibility(ctx, client, stockCode)` 추가
+  - TTTC8908R 호출 → `OrderableQty`(수량) + `AvailableCash`(재선정 기준 현금) 반환
+  - `qty > 0` 이면 주문 / `qty == 0` 이면 `AvailableCash` 기준으로 종목 재선정
+
+**[Refactor] frontend/src/pages/Dashboard.jsx**
+- 카드 5개 → 4개로 재편: 총평가금액 / 출금가능금액 / 자산증감액 / 자산증감수익률
+- 거래가능금액(주문가능금액) 카드 제거
+
+**Files Touched:**
+- `backend/internal/kis/client.go`
+- `backend/internal/agent/balance.go`
+- `backend/internal/agent/order.go`
+- `frontend/src/pages/Dashboard.jsx`
+
+**Pending/Next Steps:**
+- 에이전트 종목 선정 로직 구현 시 `CheckOrderFeasibility` 연동 및 재선정 루프 구현
+
+---
+
 ## 2026-02-25 (3)
 
 ### [Feature] 주문/로그 개별 삭제 + KIS 체결 자동 동기화

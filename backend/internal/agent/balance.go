@@ -10,22 +10,21 @@ import (
 	"github.com/micro-trading-for-agent/backend/internal/models"
 )
 
-// AccountBalance holds the parsed account balance for agent decisions.
+// AccountBalance holds the parsed account balance for dashboard display.
+// Source: TTTC8434R (inquire-balance) — single API call, no 주문가능금액.
 //
-//   - TradableAmount    : 거래가능금액 (ord_psbl_cash / 주문가능현금) — TTTC8908R 별도 조회
-//   - WithdrawableAmount: 출금가능금액 (prvs_rcdl_excc_amt / D+2 정산금액) — 실제 출금 가능한 금액
+//   - WithdrawableAmount: 출금가능금액 (dnca_tot_amt / 예수금) — KIS 앱 "출금가능"과 동일
+//   - AssetChangeAmt    : 자산증감액 (asst_icdc_amt) — 전일 대비 자산 변동금액
+//   - AssetChangeRate   : 자산증감수익률 (계산값: asst_icdc_amt / bfdy_tot_asst_evlu_amt × 100)
 type AccountBalance struct {
 	TotalEval          float64 `json:"total_eval"`
-	TradableAmount     float64 `json:"tradable_amount"`     // 거래가능금액 (에이전트 매수 판단 기준)
-	WithdrawableAmount float64 `json:"withdrawable_amount"` // 출금가능금액 (D+2)
-	PurchaseAmt        float64 `json:"purchase_amt"`
-	EvalProfitLoss     float64 `json:"eval_profit_loss"`
-	ProfitRate         string  `json:"profit_rate"`
+	WithdrawableAmount float64 `json:"withdrawable_amount"` // 출금가능금액 (dnca_tot_amt)
+	AssetChangeAmt     float64 `json:"asset_change_amt"`    // 자산증감액
+	AssetChangeRate    string  `json:"asset_change_rate"`   // 자산증감수익률 (%)
 }
 
-// GetAccountBalance fetches account balance via two KIS API calls:
-//   - output2 → 총평가금액, 출금가능금액(prvs_rcdl_excc_amt), 평가손익
-//   - TTTC8908R → 거래가능금액(ord_psbl_cash / 주문가능현금)
+// GetAccountBalance fetches account balance via TTTC8434R (inquire-balance output2).
+// 주문가능금액은 대시보드에서 제거됨 — 에이전트 주문 시 TTTC8908R로 종목별 확인.
 func GetAccountBalance(ctx context.Context, client *kis.Client, db *database.DB) (*AccountBalance, error) {
 	summary, err := client.GetInquireBalance(ctx)
 	if err != nil {
@@ -33,38 +32,28 @@ func GetAccountBalance(ctx context.Context, client *kis.Client, db *database.DB)
 	}
 
 	totalEval, _ := strconv.ParseFloat(summary.TotalEval, 64)
-	tradable, _ := strconv.ParseFloat(summary.DepositAmt, 64)          // fallback: dnca_tot_amt
-	withdrawable, _ := strconv.ParseFloat(summary.WithdrawableAmt, 64) // prvs_rcdl_excc_amt = 출금가능금액
+	withdrawable, _ := strconv.ParseFloat(summary.DepositAmt, 64)     // dnca_tot_amt = 출금가능금액
+	assetChangeAmt, _ := strconv.ParseFloat(summary.AssetChangeAmt, 64)
+	prevTotal, _ := strconv.ParseFloat(summary.PrevTotalAsset, 64)
 
-	// 주문가능현금(ord_psbl_cash) 조회 — dnca_tot_amt보다 정확한 실거래 가능 금액
-	if avail, err := client.GetAvailableOrder(ctx); err == nil {
-		if v, err2 := strconv.ParseFloat(avail.AvailableAmount, 64); err2 == nil {
-			tradable = v
-		}
-	}
-	purchaseAmt, _ := strconv.ParseFloat(summary.PurchaseAmt, 64)
-	evalProfitLoss, _ := strconv.ParseFloat(summary.EvalProfitLoss, 64)
-
-	// 수익률 계산: 매입금액이 0이면 "-"
-	profitRate := "-"
-	if purchaseAmt > 0 {
-		rate := evalProfitLoss / purchaseAmt * 100
-		profitRate = fmt.Sprintf("%.2f", rate)
+	// asst_icdc_erng_rt는 KIS가 "데이터 미제공" (항상 0) — 직접 계산
+	assetChangeRate := "-"
+	if prevTotal > 0 {
+		rate := assetChangeAmt / prevTotal * 100
+		assetChangeRate = fmt.Sprintf("%.2f", rate)
 	}
 
-	// DB 스냅샷 (tradable_amount 기준 저장)
+	// DB 스냅샷
 	_, _ = db.ExecContext(ctx,
 		`INSERT INTO balances (total_eval, available_amount) VALUES (?, ?)`,
-		totalEval, tradable,
+		totalEval, withdrawable,
 	)
 
 	return &AccountBalance{
 		TotalEval:          totalEval,
-		TradableAmount:     tradable,
 		WithdrawableAmount: withdrawable,
-		PurchaseAmt:        purchaseAmt,
-		EvalProfitLoss:     evalProfitLoss,
-		ProfitRate:         profitRate,
+		AssetChangeAmt:     assetChangeAmt,
+		AssetChangeRate:    assetChangeRate,
 	}, nil
 }
 

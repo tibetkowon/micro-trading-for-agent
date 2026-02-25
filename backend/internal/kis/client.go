@@ -58,18 +58,19 @@ type StockPriceResponse struct {
 	Volume       string `json:"acml_vol"`       // 누적 거래량
 }
 
-// AvailableOrderResponse holds response from inquire-psbl-order (매수가능조회).
+// AvailableOrderResponse holds response from inquire-psbl-order (매수가능조회 TTTC8908R).
+// Used by the agent right before placing an order for a specific stock.
 type AvailableOrderResponse struct {
-	AvailableAmount string `json:"ord_psbl_cash"` // 주문가능현금
+	OrderableQty  string `json:"ord_psbl_qty"`  // 주문가능수량 (0이면 주문 불가)
+	AvailableCash string `json:"ord_psbl_cash"` // 주문가능현금 (재선정 기준 금액)
 }
 
-// InquireBalanceOutput2 holds account summary from inquire-balance output2 (주식잔고조회).
+// InquireBalanceOutput2 holds account summary from inquire-balance output2 (TTTC8434R).
 type InquireBalanceOutput2 struct {
-	TotalEval       string `json:"tot_evlu_amt"`       // 총평가금액
-	DepositAmt      string `json:"dnca_tot_amt"`       // 예수금총금액 (거래가능금액)
-	WithdrawableAmt string `json:"prvs_rcdl_excc_amt"` // 가수도정산금액 (D+2 출금가능금액)
-	PurchaseAmt     string `json:"pchs_amt_smtl_amt"`  // 매입금액합계
-	EvalProfitLoss  string `json:"evlu_pfls_smtl_amt"` // 평가손익합계금액
+	TotalEval      string `json:"tot_evlu_amt"`          // 총평가금액
+	DepositAmt     string `json:"dnca_tot_amt"`          // 예수금총금액 = 출금가능금액
+	AssetChangeAmt string `json:"asst_icdc_amt"`         // 자산증감액
+	PrevTotalAsset string `json:"bfdy_tot_asst_evlu_amt"` // 전일총자산평가금액 (수익률 계산용)
 }
 
 // HoldingItem holds a single stock position from inquire-balance output1 (보유 종목).
@@ -122,12 +123,13 @@ func (c *Client) GetStockPrice(ctx context.Context, stockCode string) (*StockPri
 	return &result.Output, nil
 }
 
-// GetAvailableOrder fetches available order amount (매수가능조회).
-func (c *Client) GetAvailableOrder(ctx context.Context) (*AvailableOrderResponse, error) {
+// GetAvailableOrder checks order feasibility for a specific stock (매수가능조회 TTTC8908R).
+// stockCode: 종목코드 (e.g. "005930"). ORD_DVSN=01(시장가), ORD_UNPR=0.
+// Returns ord_psbl_qty (주문가능수량) and ord_psbl_cash (주문가능현금).
+func (c *Client) GetAvailableOrder(ctx context.Context, stockCode string) (*AvailableOrderResponse, error) {
 	endpoint := "/uapi/domestic-stock/v1/trading/inquire-psbl-order"
-	// ORD_DVSN=01(시장가) 필수, PDNO/ORD_UNPR 공란 허용
-	params := fmt.Sprintf("?CANO=%s&ACNT_PRDT_CD=%s&PDNO=&ORD_UNPR=0&ORD_DVSN=01&CMA_EVLU_AMT_ICLD_YN=N&OVRS_ICLD_YN=N",
-		c.accountNo, c.accountType)
+	params := fmt.Sprintf("?CANO=%s&ACNT_PRDT_CD=%s&PDNO=%s&ORD_UNPR=0&ORD_DVSN=01&CMA_EVLU_AMT_ICLD_YN=N&OVRS_ICLD_YN=N",
+		c.accountNo, c.accountType, stockCode)
 
 	raw, err := c.get(ctx, endpoint, params, "TTTC8908R")
 	if err != nil {
