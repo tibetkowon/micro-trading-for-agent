@@ -23,7 +23,7 @@ type Candle struct {
 // GetChart returns OHLCV candlestick data for the given interval.
 //
 //   - "1m": 1-minute bars, up to 30 bars (~30 min of intraday data, 1 API call)
-//   - "5m": 5-minute bars, up to 30 bars (~2.5 hrs, aggregated from 1m; up to 5 calls)
+//   - "5m": 5-minute bars, up to 78 bars (장 전체 6.5시간 커버, aggregated from 1m; up to 15 calls)
 //   - "1h": hourly bars, today's full session (~7 bars; aggregated from 1m; up to 14 calls)
 func GetChart(ctx context.Context, client *kis.Client, stockCode, interval string) ([]Candle, error) {
 	switch interval {
@@ -34,7 +34,8 @@ func GetChart(ctx context.Context, client *kis.Client, stockCode, interval strin
 		}
 		return minuteBarsToCandles(bars), nil
 	case "5m":
-		bars, err := fetchMinuteBars(ctx, client, stockCode, 150)
+		// 390분 = 장 전체(09:00~15:30) 커버. 5분봉 최대 78개.
+		bars, err := fetchMinuteBars(ctx, client, stockCode, 390)
 		if err != nil {
 			return nil, err
 		}

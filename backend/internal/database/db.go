@@ -58,11 +58,13 @@ func (db *DB) migrate() error {
 		`CREATE TABLE IF NOT EXISTS orders (
 			id           INTEGER PRIMARY KEY AUTOINCREMENT,
 			stock_code   TEXT    NOT NULL,
+			stock_name   TEXT    NOT NULL DEFAULT '',
 			order_type   TEXT    NOT NULL CHECK(order_type IN ('BUY','SELL')),
 			qty          INTEGER NOT NULL CHECK(qty > 0),
 			price        REAL    NOT NULL CHECK(price >= 0),
+			filled_price REAL    NOT NULL DEFAULT 0,
 			status       TEXT    NOT NULL DEFAULT 'PENDING'
-			                CHECK(status IN ('PENDING','FILLED','CANCELLED','FAILED')),
+			                CHECK(status IN ('PENDING','FILLED','PARTIALLY_FILLED','CANCELLED','FAILED')),
 			kis_order_id TEXT    NOT NULL DEFAULT '',
 			created_at   DATETIME NOT NULL DEFAULT (datetime('now'))
 		)`,
@@ -88,6 +90,16 @@ func (db *DB) migrate() error {
 		if _, err := db.Exec(s); err != nil {
 			return fmt.Errorf("exec migration: %w\nSQL: %s", err, s)
 		}
+	}
+
+	// 기존 DB 인스턴스를 위한 컬럼 추가 마이그레이션 (이미 존재하면 무시)
+	alterStmts := []string{
+		`ALTER TABLE orders ADD COLUMN stock_name   TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE orders ADD COLUMN filled_price REAL NOT NULL DEFAULT 0`,
+	}
+	for _, s := range alterStmts {
+		// "duplicate column name" 에러는 정상 (이미 존재하는 경우) — 무시
+		db.Exec(s) //nolint:errcheck
 	}
 
 	return nil

@@ -40,9 +40,18 @@ export default function Dashboard() {
       {loading ? (
         <p className="text-gray-500">로딩 중...</p>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
           <Card title="총 평가금액" value={fmt(data?.total_eval)} />
-          <Card title="주문 가능 현금" value={fmt(data?.available_amount)} />
+          <Card
+            title="거래가능금액"
+            value={fmt(data?.tradable_amount)}
+            sub="예수금총금액"
+          />
+          <Card
+            title="출금가능금액"
+            value={fmt(data?.withdrawable_amount)}
+            sub="D+2 정산"
+          />
           <Card title="매입 금액" value={fmt(data?.purchase_amt)} />
           <Card
             title="평가 손익"
