@@ -6,6 +6,13 @@ function fmtDate(s) {
   return new Date(s).toLocaleString('ko-KR')
 }
 
+function fmtPrice(price) {
+  if (!price && price !== 0) return '-'
+  return Number(price).toLocaleString('ko-KR') + '원'
+}
+
+const FILLED_STATUSES = new Set(['FILLED', 'PARTIALLY_FILLED'])
+
 export default function Orders() {
   const { data, loading, error, refetch } = useApi('/api/orders?limit=100')
 
@@ -42,25 +49,39 @@ export default function Orders() {
                 <th className="pb-2 pr-4">종목</th>
                 <th className="pb-2 pr-4">유형</th>
                 <th className="pb-2 pr-4">수량</th>
-                <th className="pb-2 pr-4">가격</th>
+                <th className="pb-2 pr-4">주문가 / 체결가</th>
                 <th className="pb-2 pr-4">상태</th>
                 <th className="pb-2">주문시각</th>
               </tr>
             </thead>
             <tbody>
-              {orders.map((o) => (
-                <tr key={o.id} className="border-b border-gray-800/50 hover:bg-gray-900/50">
-                  <td className="py-2 pr-4 text-gray-500">{o.id}</td>
-                  <td className="py-2 pr-4 font-mono">{o.stock_code}</td>
-                  <td className={`py-2 pr-4 font-semibold ${o.order_type === 'BUY' ? 'text-blue-400' : 'text-red-400'}`}>
-                    {o.order_type === 'BUY' ? '매수' : '매도'}
-                  </td>
-                  <td className="py-2 pr-4">{o.qty.toLocaleString()}</td>
-                  <td className="py-2 pr-4">{Number(o.price).toLocaleString('ko-KR')}원</td>
-                  <td className="py-2 pr-4"><StatusBadge status={o.status} /></td>
-                  <td className="py-2 text-gray-400">{fmtDate(o.created_at)}</td>
-                </tr>
-              ))}
+              {orders.map((o) => {
+                const isFilled = FILLED_STATUSES.has(o.status)
+                return (
+                  <tr key={o.id} className="border-b border-gray-800/50 hover:bg-gray-900/50">
+                    <td className="py-2 pr-4 text-gray-500">{o.id}</td>
+                    <td className="py-2 pr-4">
+                      <span className="font-semibold">{o.stock_name || o.stock_code}</span>
+                      {o.stock_name && (
+                        <span className="ml-1.5 text-xs text-gray-500 font-mono">{o.stock_code}</span>
+                      )}
+                    </td>
+                    <td className={`py-2 pr-4 font-semibold ${o.order_type === 'BUY' ? 'text-blue-400' : 'text-red-400'}`}>
+                      {o.order_type === 'BUY' ? '매수' : '매도'}
+                    </td>
+                    <td className="py-2 pr-4">{o.qty.toLocaleString()}</td>
+                    <td className="py-2 pr-4">
+                      {isFilled && o.filled_price > 0 ? (
+                        <span className="text-yellow-400 font-semibold">{fmtPrice(o.filled_price)}</span>
+                      ) : (
+                        <span className="text-gray-300">{fmtPrice(o.price)}</span>
+                      )}
+                    </td>
+                    <td className="py-2 pr-4"><StatusBadge status={o.status} /></td>
+                    <td className="py-2 text-gray-400">{fmtDate(o.created_at)}</td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         </div>

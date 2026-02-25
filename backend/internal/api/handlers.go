@@ -97,12 +97,24 @@ func (h *Handler) PlaceOrder(c *gin.Context) {
 	c.JSON(http.StatusCreated, result)
 }
 
-// GET /api/logs/kis
+// GET /api/positions — KIS 실시간 보유 종목 조회 (inquire-balance output1)
+func (h *Handler) GetPositions(c *gin.Context) {
+	holdings, err := h.client.GetHoldings(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"positions": holdings})
+}
+
+// GET /api/logs/kis?limit=N&summary=true
+// summary=true 이면 raw_response 필드를 제외한 요약 형태로 반환
 func (h *Handler) GetKISLogs(c *gin.Context) {
 	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "100"))
 	if limit <= 0 || limit > 500 {
 		limit = 100
 	}
+	summary := c.Query("summary") == "true"
 
 	rows, err := h.db.QueryContext(c.Request.Context(),
 		`SELECT id, endpoint, error_code, error_message, raw_response, timestamp
@@ -119,6 +131,9 @@ func (h *Handler) GetKISLogs(c *gin.Context) {
 		if err := rows.Scan(&l.ID, &l.Endpoint, &l.ErrorCode, &l.ErrorMsg, &l.RawResponse, &l.Timestamp); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
+		}
+		if summary {
+			l.RawResponse = "" // 요약 모드에서는 raw 응답 제외
 		}
 		logs = append(logs, l)
 	}

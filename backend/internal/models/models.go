@@ -21,22 +21,25 @@ const (
 type OrderStatus string
 
 const (
-	OrderStatusPending   OrderStatus = "PENDING"
-	OrderStatusFilled    OrderStatus = "FILLED"
-	OrderStatusCancelled OrderStatus = "CANCELLED"
-	OrderStatusFailed    OrderStatus = "FAILED"
+	OrderStatusPending          OrderStatus = "PENDING"
+	OrderStatusFilled           OrderStatus = "FILLED"
+	OrderStatusPartiallyFilled  OrderStatus = "PARTIALLY_FILLED"
+	OrderStatusCancelled        OrderStatus = "CANCELLED"
+	OrderStatusFailed           OrderStatus = "FAILED"
 )
 
 // Order represents a single stock trade order.
 type Order struct {
-	ID         int64       `json:"id"`
-	StockCode  string      `json:"stock_code"`
-	OrderType  OrderType   `json:"order_type"`
-	Qty        int         `json:"qty"`
-	Price      float64     `json:"price"`
-	Status     OrderStatus `json:"status"`
-	KISOrderID string      `json:"kis_order_id"`
-	CreatedAt  time.Time   `json:"created_at"`
+	ID          int64       `json:"id"`
+	StockCode   string      `json:"stock_code"`
+	StockName   string      `json:"stock_name"`   // 종목명 (KIS 히스토리 동기화 시 채워짐)
+	OrderType   OrderType   `json:"order_type"`
+	Qty         int         `json:"qty"`
+	Price       float64     `json:"price"`
+	FilledPrice float64     `json:"filled_price"` // 체결가 (체결 후 avg_prvs 기준)
+	Status      OrderStatus `json:"status"`
+	KISOrderID  string      `json:"kis_order_id"`
+	CreatedAt   time.Time   `json:"created_at"`
 }
 
 // Balance is a point-in-time snapshot of the account balance.

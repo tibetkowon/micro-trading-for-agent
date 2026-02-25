@@ -65,10 +65,23 @@ type AvailableOrderResponse struct {
 
 // InquireBalanceOutput2 holds account summary from inquire-balance output2 (주식잔고조회).
 type InquireBalanceOutput2 struct {
-	TotalEval      string `json:"tot_evlu_amt"`       // 총평가금액
-	DepositAmt     string `json:"dnca_tot_amt"`       // 예수금총금액
-	PurchaseAmt    string `json:"pchs_amt_smtl_amt"`  // 매입금액합계
-	EvalProfitLoss string `json:"evlu_pfls_smtl_amt"` // 평가손익합계금액
+	TotalEval        string `json:"tot_evlu_amt"`       // 총평가금액
+	DepositAmt       string `json:"dnca_tot_amt"`       // 예수금총금액 (거래가능금액)
+	WithdrawableAmt  string `json:"prvs_rcdl_excc_amt"` // 가수도정산금액 (D+2 출금가능금액)
+	PurchaseAmt      string `json:"pchs_amt_smtl_amt"`  // 매입금액합계
+	EvalProfitLoss   string `json:"evlu_pfls_smtl_amt"` // 평가손익합계금액
+}
+
+// HoldingItem holds a single stock position from inquire-balance output1 (보유 종목).
+type HoldingItem struct {
+	StockCode    string `json:"pdno"`          // 종목코드
+	StockName    string `json:"prdt_name"`     // 종목명
+	HoldingQty   string `json:"hldg_qty"`      // 보유수량
+	AvgPrice     string `json:"pchs_avg_pric"` // 매입평균가
+	CurrentPrice string `json:"prpr"`          // 현재가
+	EvalAmount   string `json:"evlu_amt"`      // 평가금액
+	ProfitLoss   string `json:"evlu_pfls_amt"` // 평가손익
+	ProfitRate   string `json:"evlu_erng_rt"`  // 평가수익률
 }
 
 // OrderRequest is the payload for placing a buy/sell order.
@@ -162,13 +175,40 @@ func (c *Client) GetInquireBalance(ctx context.Context) (*InquireBalanceOutput2,
 }
 
 // PlaceBuyOrder places a buy order.
+// TR-ID TTTC0012U: 국내주식주문 매수 (신규 TR, 구 TTTC0802U 대체)
 func (c *Client) PlaceBuyOrder(ctx context.Context, req OrderRequest) (*OrderResponse, error) {
-	return c.placeOrder(ctx, req, "TTTC0802U", "/uapi/domestic-stock/v1/trading/order-cash")
+	return c.placeOrder(ctx, req, "TTTC0012U", "/uapi/domestic-stock/v1/trading/order-cash")
 }
 
 // PlaceSellOrder places a sell order.
+// TR-ID TTTC0011U: 국내주식주문 매도 (신규 TR, 구 TTTC0801U 대체)
 func (c *Client) PlaceSellOrder(ctx context.Context, req OrderRequest) (*OrderResponse, error) {
-	return c.placeOrder(ctx, req, "TTTC0801U", "/uapi/domestic-stock/v1/trading/order-cash")
+	return c.placeOrder(ctx, req, "TTTC0011U", "/uapi/domestic-stock/v1/trading/order-cash")
+}
+
+// GetHoldings fetches currently held stock positions from inquire-balance output1 (보유 종목 조회).
+func (c *Client) GetHoldings(ctx context.Context) ([]HoldingItem, error) {
+	endpoint := "/uapi/domestic-stock/v1/trading/inquire-balance"
+	params := fmt.Sprintf("?CANO=%s&ACNT_PRDT_CD=%s&AFHR_FLPR_YN=N&OFL_YN=&INQR_DVSN=01&UNPR_DVSN=01&FUND_STTL_ICLD_YN=N&FNCG_AMT_AUTO_RDPT_YN=N&PRCS_DVSN=00&CTX_AREA_FK100=&CTX_AREA_NK100=",
+		c.accountNo, c.accountType)
+
+	raw, err := c.get(ctx, endpoint, params, "TTTC8434R")
+	if err != nil {
+		return nil, err
+	}
+
+	var result struct {
+		Output1 []HoldingItem `json:"output1"`
+		MsgCode string        `json:"msg_cd"`
+	}
+	if err := json.Unmarshal(raw, &result); err != nil {
+		c.logAPIError(endpoint, "PARSE_ERROR", string(raw))
+		return nil, fmt.Errorf("parse holdings: %w", err)
+	}
+	if result.Output1 == nil {
+		return []HoldingItem{}, nil
+	}
+	return result.Output1, nil
 }
 
 // GetRawBalance returns the raw JSON response from the inquire-balance endpoint.
@@ -274,7 +314,8 @@ func (c *Client) placeOrder(ctx context.Context, req OrderRequest, trID, endpoin
 
 	var result struct {
 		Output  OrderResponse `json:"output"`
-		MsgCode string        `json:"msg_cd"`
+		RtCd    string        `json:"rt_cd"`  // "0" = 성공
+		MsgCode string        `json:"msg_cd"` // 성공: APBK0013, MABC000 등
 		Msg     string        `json:"msg1"`
 	}
 	if err := json.Unmarshal(raw, &result); err != nil {
@@ -282,7 +323,8 @@ func (c *Client) placeOrder(ctx context.Context, req OrderRequest, trID, endpoin
 		return nil, fmt.Errorf("parse order response: %w", err)
 	}
 
-	if result.MsgCode != "" && result.MsgCode != "MABC000" {
+	// rt_cd="0" 이 KIS 공식 성공 기준 (msg_cd는 계좌 유형별로 상이: APBK0013, MABC000 등)
+	if result.RtCd != "0" {
 		c.logAPIError(endpoint, result.MsgCode, string(raw))
 		return nil, fmt.Errorf("KIS order error [%s]: %s", result.MsgCode, result.Msg)
 	}
