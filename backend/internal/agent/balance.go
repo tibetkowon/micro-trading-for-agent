@@ -12,8 +12,8 @@ import (
 
 // AccountBalance holds the parsed account balance for agent decisions.
 //
-//   - TradableAmount    : 거래가능금액 (dnca_tot_amt / 예수금총금액) — 매수 판단 기준 현금
-//   - WithdrawableAmount: 출금가능금액 (prvs_rcdl_excc_amt / D+2 정산금액) — 실제 출금 가능한 금액
+//   - TradableAmount    : 거래가능금액 (nrcvb_buy_amt / 미수없는매수금액) — KIS 앱 "주문가능"과 동일
+//   - WithdrawableAmount: 출금가능금액 (dnca_tot_amt / 예수금총금액) — KIS 앱 "출금가능"과 동일
 type AccountBalance struct {
 	TotalEval          float64 `json:"total_eval"`
 	TradableAmount     float64 `json:"tradable_amount"`     // 거래가능금액 (에이전트 매수 판단 기준)
@@ -23,8 +23,9 @@ type AccountBalance struct {
 	ProfitRate         string  `json:"profit_rate"`
 }
 
-// GetAccountBalance fetches account balance via KIS inquire-balance:
-//   - output2 → 총평가금액, 거래가능금액(dnca_tot_amt), 출금가능금액(prvs_rcdl_excc_amt), 평가손익
+// GetAccountBalance fetches account balance via two KIS API calls:
+//   - inquire-balance output2 → 총평가금액, 출금가능금액(dnca_tot_amt/예수금), 평가손익
+//   - inquire-psbl-order → 거래가능금액(nrcvb_buy_amt/미수없는매수금액 = KIS 앱 주문가능)
 func GetAccountBalance(ctx context.Context, client *kis.Client, db *database.DB) (*AccountBalance, error) {
 	summary, err := client.GetInquireBalance(ctx)
 	if err != nil {
@@ -32,8 +33,15 @@ func GetAccountBalance(ctx context.Context, client *kis.Client, db *database.DB)
 	}
 
 	totalEval, _ := strconv.ParseFloat(summary.TotalEval, 64)
-	tradable, _ := strconv.ParseFloat(summary.DepositAmt, 64)          // dnca_tot_amt = 예수금총금액 (거래가능금액)
-	withdrawable, _ := strconv.ParseFloat(summary.WithdrawableAmt, 64) // prvs_rcdl_excc_amt = 출금가능금액 (D+2)
+	withdrawable, _ := strconv.ParseFloat(summary.DepositAmt, 64) // dnca_tot_amt = 예수금 = 출금가능금액
+
+	// 거래가능금액: nrcvb_buy_amt (미수없는매수금액) = KIS 앱 "주문가능"
+	tradable := withdrawable // fallback
+	if avail, err := client.GetAvailableOrder(ctx); err == nil {
+		if v, err2 := strconv.ParseFloat(avail.AvailableAmount, 64); err2 == nil && v > 0 {
+			tradable = v
+		}
+	}
 	purchaseAmt, _ := strconv.ParseFloat(summary.PurchaseAmt, 64)
 	evalProfitLoss, _ := strconv.ParseFloat(summary.EvalProfitLoss, 64)
 

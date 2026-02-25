@@ -60,16 +60,15 @@ type StockPriceResponse struct {
 
 // AvailableOrderResponse holds response from inquire-psbl-order (매수가능조회).
 type AvailableOrderResponse struct {
-	AvailableAmount string `json:"ord_psbl_cash"` // 주문가능현금
+	AvailableAmount string `json:"nrcvb_buy_amt"` // 미수없는매수금액 = 주문가능금액 (미수 미사용 기준)
 }
 
 // InquireBalanceOutput2 holds account summary from inquire-balance output2 (주식잔고조회).
 type InquireBalanceOutput2 struct {
-	TotalEval       string `json:"tot_evlu_amt"`       // 총평가금액
-	DepositAmt      string `json:"dnca_tot_amt"`       // 예수금총금액 (거래가능금액)
-	WithdrawableAmt string `json:"prvs_rcdl_excc_amt"` // 가수도정산금액 (D+2 출금가능금액)
-	PurchaseAmt     string `json:"pchs_amt_smtl_amt"`  // 매입금액합계
-	EvalProfitLoss  string `json:"evlu_pfls_smtl_amt"` // 평가손익합계금액
+	TotalEval      string `json:"tot_evlu_amt"`      // 총평가금액
+	DepositAmt     string `json:"dnca_tot_amt"`      // 예수금총금액 = 출금가능금액
+	PurchaseAmt    string `json:"pchs_amt_smtl_amt"` // 매입금액합계
+	EvalProfitLoss string `json:"evlu_pfls_smtl_amt"` // 평가손익합계금액
 }
 
 // HoldingItem holds a single stock position from inquire-balance output1 (보유 종목).
