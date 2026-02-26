@@ -4,6 +4,41 @@
 
 ---
 
+## 2026-02-26 (2)
+
+### [Feature] 순위 API ETF/비정상종목 제외 및 가격 필터 추가
+
+**Description:**
+4개 순위 API(거래량/체결강도/대량체결건수/이격도) 모두에 ETF 자동 제거 및 가격 범위 필터를 추가했습니다.
+
+**ETF 제외:**
+- `FID_TRGT_EXLS_CLS_CODE=1111111111` (10자리) 적용 → 투자위험/경고/주의/관리종목/정리매매/불성실공시/우선주/거래정지/ETF/ETN/신용주문불가/SPAC 모두 제외
+- 결과: 일반 보통주만 반환 (하드코딩, 별도 파라미터 없음)
+- 거래량순위(FHPST01710000)는 KIS 문서에 비트마스크 명시; 나머지 3개는 동일 값 적용 후 실제 API 테스트로 동작 확인 필요
+
+**가격 필터:**
+- `price_min` / `price_max` query param — 직접 가격 범위 입력 (원, 빈값=전체)
+- `use_balance_filter=true` — 잔액 API(TTTC8434R)의 `dnca_tot_amt`(예수금)를 price_max로 자동 설정; 예수금 0이거나 조회 실패 시 필터 미적용(fallback)
+
+**사용 예시:**
+```
+GET /api/ranking/volume?price_max=50000
+GET /api/ranking/volume?use_balance_filter=true
+GET /api/ranking/strength?use_balance_filter=true
+GET /api/ranking/disparity?price_min=10000&price_max=100000
+```
+
+**Files Touched:**
+- `backend/internal/kis/client.go` — 4개 ranking 함수 ETF 제외값 + priceMin/priceMax 파라미터 추가
+- `backend/internal/agent/ranking.go` — 함수 시그니처에 priceMin/priceMax 추가
+- `backend/internal/api/handlers.go` — `resolvePriceFilter()` 헬퍼 + 4개 핸들러 price_min/price_max/use_balance_filter 처리
+
+**Pending/Next Steps:**
+- 실제 KIS API 호출 후 체결강도/대량체결건수/이격도 순위에서 ETF가 실제로 제외되는지 확인
+- 체결강도 API(`fid_trgt_exls_cls_code`) 비트마스크 미지원 시 응답 후처리 필터 추가 검토
+
+---
+
 ## 2026-02-26
 
 ### [Fix] KIS 토큰 자동 갱신 불동작 3가지 버그 수정 (EGW00123)
