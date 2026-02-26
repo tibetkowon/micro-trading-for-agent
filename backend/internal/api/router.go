@@ -24,10 +24,19 @@ func SetupRouter(h *Handler, frontendDist string) *gin.Engine {
 		api.GET("/orders", h.GetOrders)
 		api.POST("/orders", h.PlaceOrder)
 		api.DELETE("/orders/:id", h.DeleteOrder)
+		api.GET("/orders/feasibility", h.GetFeasibility)
 		api.GET("/logs/kis", h.GetKISLogs)
 		api.DELETE("/logs/kis/:id", h.DeleteKISLog)
 		api.GET("/settings", h.GetSettings)
 		api.GET("/debug/balance", h.DebugRawBalance)
+
+		ranking := api.Group("/ranking")
+		{
+			ranking.GET("/volume", h.GetVolumeRank)
+			ranking.GET("/strength", h.GetStrengthRank)
+			ranking.GET("/exec-count", h.GetExecCountRank)
+			ranking.GET("/disparity", h.GetDisparityRank)
+		}
 	}
 
 	// Health check
