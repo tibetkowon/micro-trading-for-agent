@@ -85,6 +85,56 @@ type HoldingItem struct {
 	ProfitRate   string `json:"evlu_erng_rt"`  // 평가수익률
 }
 
+// VolumeRankItem holds one entry from the volume ranking API (FHPST01710000).
+type VolumeRankItem struct {
+	DataRank     string `json:"data_rank"`      // 순위
+	StockCode    string `json:"mksc_shrn_iscd"` // 종목코드
+	StockName    string `json:"hts_kor_isnm"`   // 종목명
+	CurrentPrice string `json:"stck_prpr"`      // 현재가
+	Volume       string `json:"acml_vol"`       // 누적거래량
+	AvgVolume    string `json:"avrg_vol"`       // 평균거래량
+	VolIncrRate  string `json:"vol_inrt"`       // 거래량증가율
+}
+
+// StrengthRankItem holds one entry from the execution strength ranking (FHPST01680000).
+type StrengthRankItem struct {
+	DataRank     string `json:"data_rank"`      // 순위
+	StockCode    string `json:"stck_shrn_iscd"` // 종목코드
+	StockName    string `json:"hts_kor_isnm"`   // 종목명
+	CurrentPrice string `json:"stck_prpr"`      // 현재가
+	Volume       string `json:"acml_vol"`       // 누적거래량
+	Strength     string `json:"tday_rltv"`      // 체결강도
+	BuyQty       string `json:"shnu_cnqn_smtn"` // 매수체결량합계
+	SellQty      string `json:"seln_cnqn_smtn"` // 매도체결량합계
+}
+
+// ExecCountRankItem holds one entry from the bulk execution count ranking (FHKST190900C0).
+type ExecCountRankItem struct {
+	DataRank     string `json:"data_rank"`      // 순위
+	StockCode    string `json:"mksc_shrn_iscd"` // 종목코드
+	StockName    string `json:"hts_kor_isnm"`   // 종목명
+	CurrentPrice string `json:"stck_prpr"`      // 현재가
+	Volume       string `json:"acml_vol"`       // 누적거래량
+	BuyCount     string `json:"shnu_cntg_csnu"` // 매수체결건수
+	SellCount    string `json:"seln_cntg_csnu"` // 매도체결건수
+	NetBuyQty    string `json:"ntby_cnqn"`      // 순매수체결량
+}
+
+// DisparityRankItem holds one entry from the disparity index ranking (FHPST01780000).
+type DisparityRankItem struct {
+	DataRank     string `json:"data_rank"`      // 순위
+	StockCode    string `json:"mksc_shrn_iscd"` // 종목코드
+	StockName    string `json:"hts_kor_isnm"`   // 종목명
+	CurrentPrice string `json:"stck_prpr"`      // 현재가
+	ChangeRate   string `json:"prdy_ctrt"`      // 전일대비율
+	Volume       string `json:"acml_vol"`       // 누적거래량
+	D5           string `json:"d5_dsrt"`        // 5일 이격도
+	D10          string `json:"d10_dsrt"`       // 10일 이격도
+	D20          string `json:"d20_dsrt"`       // 20일 이격도
+	D60          string `json:"d60_dsrt"`       // 60일 이격도
+	D120         string `json:"d120_dsrt"`      // 120일 이격도
+}
+
 // OrderRequest is the payload for placing a buy/sell order.
 type OrderRequest struct {
 	StockCode string `json:"pdno"`     // 종목코드
@@ -220,6 +270,114 @@ func (c *Client) GetRawBalance(ctx context.Context) ([]byte, error) {
 	params := fmt.Sprintf("?CANO=%s&ACNT_PRDT_CD=%s&AFHR_FLPR_YN=N&OFL_YN=&INQR_DVSN=01&UNPR_DVSN=01&FUND_STTL_ICLD_YN=N&FNCG_AMT_AUTO_RDPT_YN=N&PRCS_DVSN=00&CTX_AREA_FK100=&CTX_AREA_NK100=",
 		c.accountNo, c.accountType)
 	return c.get(ctx, endpoint, params, "TTTC8434R")
+}
+
+// GetVolumeRank fetches the volume ranking (거래량 순위 FHPST01710000). Max 30 results.
+// market: "J"=KRX(default), "NX"=NXT.
+// sort (FID_BLNG_CLS_CODE): "0"=평균거래량(default), "1"=거래량증가율, "2"=평균거래회전율, "3"=거래대금순.
+func (c *Client) GetVolumeRank(ctx context.Context, market, sort string) ([]VolumeRankItem, error) {
+	endpoint := "/uapi/domestic-stock/v1/quotations/volume-rank"
+	params := fmt.Sprintf(
+		"?FID_COND_MRKT_DIV_CODE=%s&FID_COND_SCR_DIV_CODE=20171&FID_INPUT_ISCD=0000&FID_DIV_CLS_CODE=0&FID_BLNG_CLS_CODE=%s&FID_TRGT_CLS_CODE=111111111&FID_TRGT_EXLS_CLS_CODE=000000&FID_INPUT_PRICE_1=&FID_INPUT_PRICE_2=&FID_VOL_CNT=&FID_INPUT_DATE_1=",
+		market, sort)
+
+	raw, err := c.get(ctx, endpoint, params, "FHPST01710000")
+	if err != nil {
+		return nil, err
+	}
+	var result struct {
+		Output  []VolumeRankItem `json:"output"`
+		MsgCode string           `json:"msg_cd"`
+	}
+	if err := json.Unmarshal(raw, &result); err != nil {
+		c.logAPIError(endpoint, "PARSE_ERROR", string(raw))
+		return nil, fmt.Errorf("parse volume rank: %w", err)
+	}
+	if result.Output == nil {
+		return []VolumeRankItem{}, nil
+	}
+	return result.Output, nil
+}
+
+// GetStrengthRank fetches the execution strength ranking (체결강도 상위 FHPST01680000). Max 30 results.
+// market (fid_input_iscd): "0000"=전체(default), "0001"=거래소, "1001"=코스닥, "2001"=코스피200.
+func (c *Client) GetStrengthRank(ctx context.Context, market string) ([]StrengthRankItem, error) {
+	endpoint := "/uapi/domestic-stock/v1/ranking/volume-power"
+	params := fmt.Sprintf(
+		"?fid_cond_mrkt_div_code=J&fid_cond_scr_div_code=20168&fid_input_iscd=%s&fid_div_cls_code=0&fid_input_price_1=&fid_input_price_2=&fid_vol_cnt=&fid_trgt_cls_code=0&fid_trgt_exls_cls_code=0",
+		market)
+
+	raw, err := c.get(ctx, endpoint, params, "FHPST01680000")
+	if err != nil {
+		return nil, err
+	}
+	var result struct {
+		Output  []StrengthRankItem `json:"output"`
+		MsgCode string             `json:"msg_cd"`
+	}
+	if err := json.Unmarshal(raw, &result); err != nil {
+		c.logAPIError(endpoint, "PARSE_ERROR", string(raw))
+		return nil, fmt.Errorf("parse strength rank: %w", err)
+	}
+	if result.Output == nil {
+		return []StrengthRankItem{}, nil
+	}
+	return result.Output, nil
+}
+
+// GetExecCountRank fetches the bulk execution count ranking (대량체결건수 상위 FHKST190900C0). Max 30 results.
+// market (fid_input_iscd): "0000"=전체(default), "0001"=거래소, "1001"=코스닥, "2001"=코스피200.
+// sort (fid_rank_sort_cls_code): "0"=매수상위(default), "1"=매도상위.
+func (c *Client) GetExecCountRank(ctx context.Context, market, sort string) ([]ExecCountRankItem, error) {
+	endpoint := "/uapi/domestic-stock/v1/ranking/bulk-trans-num"
+	params := fmt.Sprintf(
+		"?fid_cond_mrkt_div_code=J&fid_cond_scr_div_code=11909&fid_input_iscd=%s&fid_div_cls_code=0&fid_rank_sort_cls_code=%s&fid_input_price_1=&fid_input_price_2=&fid_aply_rang_prc_1=&fid_aply_rang_prc_2=&fid_input_iscd_2=&fid_vol_cnt=&fid_trgt_cls_code=0&fid_trgt_exls_cls_code=0",
+		market, sort)
+
+	raw, err := c.get(ctx, endpoint, params, "FHKST190900C0")
+	if err != nil {
+		return nil, err
+	}
+	var result struct {
+		Output  []ExecCountRankItem `json:"output"`
+		MsgCode string              `json:"msg_cd"`
+	}
+	if err := json.Unmarshal(raw, &result); err != nil {
+		c.logAPIError(endpoint, "PARSE_ERROR", string(raw))
+		return nil, fmt.Errorf("parse exec count rank: %w", err)
+	}
+	if result.Output == nil {
+		return []ExecCountRankItem{}, nil
+	}
+	return result.Output, nil
+}
+
+// GetDisparityRank fetches the disparity index ranking (이격도 순위 FHPST01780000). Max 30 results.
+// market (fid_input_iscd): "0000"=전체(default), "0001"=거래소, "1001"=코스닥, "2001"=코스피200.
+// period (fid_hour_cls_code): "5", "10", "20"(default), "60", "120".
+// sort (fid_rank_sort_cls_code): "0"=이격도 상위순(default), "1"=이격도 하위순.
+func (c *Client) GetDisparityRank(ctx context.Context, market, period, sort string) ([]DisparityRankItem, error) {
+	endpoint := "/uapi/domestic-stock/v1/ranking/disparity"
+	params := fmt.Sprintf(
+		"?fid_input_price_2=&fid_cond_mrkt_div_code=J&fid_cond_scr_div_code=20178&fid_div_cls_code=6&fid_rank_sort_cls_code=%s&fid_hour_cls_code=%s&fid_input_iscd=%s&fid_trgt_cls_code=0&fid_trgt_exls_cls_code=0&fid_input_price_1=&fid_vol_cnt=",
+		sort, period, market)
+
+	raw, err := c.get(ctx, endpoint, params, "FHPST01780000")
+	if err != nil {
+		return nil, err
+	}
+	var result struct {
+		Output  []DisparityRankItem `json:"output"`
+		MsgCode string              `json:"msg_cd"`
+	}
+	if err := json.Unmarshal(raw, &result); err != nil {
+		c.logAPIError(endpoint, "PARSE_ERROR", string(raw))
+		return nil, fmt.Errorf("parse disparity rank: %w", err)
+	}
+	if result.Output == nil {
+		return []DisparityRankItem{}, nil
+	}
+	return result.Output, nil
 }
 
 // GetOrderHistory fetches recent order history.

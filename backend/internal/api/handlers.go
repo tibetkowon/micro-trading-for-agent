@@ -225,6 +225,77 @@ func (h *Handler) GetSettings(c *gin.Context) {
 	})
 }
 
+// GET /api/orders/feasibility?code=:code — 주문가능수량 및 주문가능금액 조회 (TTTC8908R)
+// qty > 0 이면 주문 가능. qty == 0 이면 available_cash 기준으로 종목 재선정.
+func (h *Handler) GetFeasibility(c *gin.Context) {
+	code := c.Query("code")
+	if code == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "code query param is required"})
+		return
+	}
+	result, err := agent.CheckOrderFeasibility(c.Request.Context(), h.client, code)
+	if err != nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"orderable_qty":  result.OrderableQty,
+		"available_cash": result.AvailableCash,
+	})
+}
+
+// GET /api/ranking/volume?market=J&sort=0 — 거래량 순위 (FHPST01710000, max 30)
+// sort: 0=평균거래량(default), 1=거래량증가율, 2=거래회전율, 3=거래대금순
+func (h *Handler) GetVolumeRank(c *gin.Context) {
+	market := c.DefaultQuery("market", "J")
+	sort := c.DefaultQuery("sort", "0")
+	items, err := agent.GetVolumeRank(c.Request.Context(), h.client, market, sort)
+	if err != nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"ranking": items})
+}
+
+// GET /api/ranking/strength?market=0000 — 체결강도 상위 (FHPST01680000, max 30)
+// market: 0000=전체(default), 0001=거래소, 1001=코스닥, 2001=코스피200
+func (h *Handler) GetStrengthRank(c *gin.Context) {
+	market := c.DefaultQuery("market", "0000")
+	items, err := agent.GetStrengthRank(c.Request.Context(), h.client, market)
+	if err != nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"ranking": items})
+}
+
+// GET /api/ranking/exec-count?market=0000&sort=0 — 대량체결건수 상위 (FHKST190900C0, max 30)
+// sort: 0=매수상위(default), 1=매도상위
+func (h *Handler) GetExecCountRank(c *gin.Context) {
+	market := c.DefaultQuery("market", "0000")
+	sort := c.DefaultQuery("sort", "0")
+	items, err := agent.GetExecCountRank(c.Request.Context(), h.client, market, sort)
+	if err != nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"ranking": items})
+}
+
+// GET /api/ranking/disparity?market=0000&period=20&sort=0 — 이격도 순위 (FHPST01780000, max 30)
+// period: 5, 10, 20(default), 60, 120 / sort: 0=이격도상위(default), 1=이격도하위
+func (h *Handler) GetDisparityRank(c *gin.Context) {
+	market := c.DefaultQuery("market", "0000")
+	period := c.DefaultQuery("period", "20")
+	sort := c.DefaultQuery("sort", "0")
+	items, err := agent.GetDisparityRank(c.Request.Context(), h.client, market, period, sort)
+	if err != nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"ranking": items})
+}
+
 // GET /api/debug/balance — KIS 잔고 API 원본 응답 확인용 (필드명 디버깅)
 func (h *Handler) DebugRawBalance(c *gin.Context) {
 	raw, err := h.client.GetRawBalance(c.Request.Context())
