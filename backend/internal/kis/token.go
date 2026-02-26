@@ -174,11 +174,54 @@ func (tm *TokenManager) EnsureToken(ctx context.Context) (*models.Token, error) 
 
 // StartAutoRefresh launches a background goroutine that refreshes the token
 // every tokenRefreshInterval (20 hours). Call Stop() to shut it down.
+//
+// The first refresh is scheduled based on the last token's IssuedAt time so that
+// server restarts do not reset the 20-hour window. For example, if a token was
+// issued 18 hours ago, the first refresh fires in 2 hours — not 20.
 func (tm *TokenManager) StartAutoRefresh(ctx context.Context) {
 	go func() {
+		// Calculate how long until the next scheduled refresh.
+		firstDelay := tokenRefreshInterval
+		if tok, err := tm.GetCurrentToken(ctx); err == nil {
+			elapsed := time.Since(tok.IssuedAt)
+			if remaining := tokenRefreshInterval - elapsed; remaining > 0 {
+				firstDelay = remaining
+			} else {
+				firstDelay = 0 // already overdue — refresh immediately
+			}
+		}
+
+		logger.Info("KIS token auto-refresh started", map[string]any{
+			"interval": tokenRefreshInterval.String(),
+			"first_in": firstDelay.String(),
+		})
+
+		// Fire the first refresh after the token-age-aware delay.
+		if firstDelay == 0 {
+			if _, err := tm.IssueToken(ctx); err != nil {
+				logger.Error("KIS token auto-refresh failed", map[string]any{"error": err.Error()})
+			}
+		} else {
+			timer := time.NewTimer(firstDelay)
+			select {
+			case <-timer.C:
+				if _, err := tm.IssueToken(ctx); err != nil {
+					logger.Error("KIS token auto-refresh failed", map[string]any{"error": err.Error()})
+				}
+			case <-tm.stopCh:
+				timer.Stop()
+				logger.Info("KIS token auto-refresh stopped", nil)
+				return
+			case <-ctx.Done():
+				timer.Stop()
+				return
+			}
+			timer.Stop()
+		}
+
+		// Subsequent refreshes run on a fixed 20-hour interval.
 		ticker := time.NewTicker(tokenRefreshInterval)
 		defer ticker.Stop()
-		logger.Info("KIS token auto-refresh started", map[string]any{"interval": tokenRefreshInterval.String()})
 		for {
 			select {
 			case <-ticker.C:

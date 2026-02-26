@@ -251,7 +251,7 @@ func (c *Client) get(ctx context.Context, endpoint, queryParams, trID string) ([
 		return nil, fmt.Errorf("rate limiter: %w", err)
 	}
 
-	tok, err := c.tokenManager.GetCurrentToken(ctx)
+	tok, err := c.tokenManager.EnsureToken(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("get token: %w", err)
 	}
@@ -273,6 +273,25 @@ func (c *Client) get(ctx context.Context, endpoint, queryParams, trID string) ([
 		c.logAPIError(endpoint, fmt.Sprintf("HTTP-%d", resp.StatusCode), string(raw))
 		return nil, fmt.Errorf("KIS GET %s returned %d", endpoint, resp.StatusCode)
 	}
+
+	// KIS GET endpoints return HTTP 200 even for API-level errors (e.g. expired token).
+	// Parse rt_cd from the envelope to detect these cases.
+	var envelope struct {
+		RtCd    string `json:"rt_cd"`
+		MsgCode string `json:"msg_cd"`
+		Msg     string `json:"msg1"`
+	}
+	if err := json.Unmarshal(raw, &envelope); err == nil && envelope.RtCd == "1" {
+		c.logAPIError(endpoint, envelope.MsgCode, string(raw))
+		if envelope.MsgCode == "EGW00123" {
+			logger.Info("KIS token expired (EGW00123) — triggering immediate refresh", nil)
+			if _, refreshErr := c.tokenManager.IssueToken(ctx); refreshErr != nil {
+				logger.Error("immediate token refresh failed", map[string]any{"error": refreshErr.Error()})
+			}
+		}
+		return nil, fmt.Errorf("KIS error [%s]: %s", envelope.MsgCode, envelope.Msg)
+	}
+
 	return raw, nil
 }
 
@@ -281,7 +300,7 @@ func (c *Client) placeOrder(ctx context.Context, req OrderRequest, trID, endpoin
 		return nil, fmt.Errorf("rate limiter: %w", err)
 	}
 
-	tok, err := c.tokenManager.GetCurrentToken(ctx)
+	tok, err := c.tokenManager.EnsureToken(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("get token: %w", err)
 	}
