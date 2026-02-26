@@ -275,11 +275,13 @@ func (c *Client) GetRawBalance(ctx context.Context) ([]byte, error) {
 // GetVolumeRank fetches the volume ranking (거래량 순위 FHPST01710000). Max 30 results.
 // market: "J"=KRX(default), "NX"=NXT.
 // sort (FID_BLNG_CLS_CODE): "0"=평균거래량(default), "1"=거래량증가율, "2"=평균거래회전율, "3"=거래대금순.
-func (c *Client) GetVolumeRank(ctx context.Context, market, sort string) ([]VolumeRankItem, error) {
+// priceMin/priceMax: 가격 범위 필터 (빈값="" 이면 전체 가격 조회).
+// FID_TRGT_EXLS_CLS_CODE=1111111111: 투자위험/경고/주의/관리종목/정리매매/불성실공시/우선주/거래정지/ETF/ETN 모두 제외 → 일반주식만.
+func (c *Client) GetVolumeRank(ctx context.Context, market, sort, priceMin, priceMax string) ([]VolumeRankItem, error) {
 	endpoint := "/uapi/domestic-stock/v1/quotations/volume-rank"
 	params := fmt.Sprintf(
-		"?FID_COND_MRKT_DIV_CODE=%s&FID_COND_SCR_DIV_CODE=20171&FID_INPUT_ISCD=0000&FID_DIV_CLS_CODE=0&FID_BLNG_CLS_CODE=%s&FID_TRGT_CLS_CODE=111111111&FID_TRGT_EXLS_CLS_CODE=000000&FID_INPUT_PRICE_1=&FID_INPUT_PRICE_2=&FID_VOL_CNT=&FID_INPUT_DATE_1=",
-		market, sort)
+		"?FID_COND_MRKT_DIV_CODE=%s&FID_COND_SCR_DIV_CODE=20171&FID_INPUT_ISCD=0000&FID_DIV_CLS_CODE=0&FID_BLNG_CLS_CODE=%s&FID_TRGT_CLS_CODE=111111111&FID_TRGT_EXLS_CLS_CODE=1111111111&FID_INPUT_PRICE_1=%s&FID_INPUT_PRICE_2=%s&FID_VOL_CNT=&FID_INPUT_DATE_1=",
+		market, sort, priceMin, priceMax)
 
 	raw, err := c.get(ctx, endpoint, params, "FHPST01710000")
 	if err != nil {
@@ -301,11 +303,13 @@ func (c *Client) GetVolumeRank(ctx context.Context, market, sort string) ([]Volu
 
 // GetStrengthRank fetches the execution strength ranking (체결강도 상위 FHPST01680000). Max 30 results.
 // market (fid_input_iscd): "0000"=전체(default), "0001"=거래소, "1001"=코스닥, "2001"=코스피200.
-func (c *Client) GetStrengthRank(ctx context.Context, market string) ([]StrengthRankItem, error) {
+// priceMin/priceMax: 가격 범위 필터 (빈값="" 이면 전체 가격 조회).
+// fid_trgt_exls_cls_code=1111111111: ETF/ETN/우선주 등 비정상 종목 제외 시도.
+func (c *Client) GetStrengthRank(ctx context.Context, market, priceMin, priceMax string) ([]StrengthRankItem, error) {
 	endpoint := "/uapi/domestic-stock/v1/ranking/volume-power"
 	params := fmt.Sprintf(
-		"?fid_cond_mrkt_div_code=J&fid_cond_scr_div_code=20168&fid_input_iscd=%s&fid_div_cls_code=0&fid_input_price_1=&fid_input_price_2=&fid_vol_cnt=&fid_trgt_cls_code=0&fid_trgt_exls_cls_code=0",
-		market)
+		"?fid_cond_mrkt_div_code=J&fid_cond_scr_div_code=20168&fid_input_iscd=%s&fid_div_cls_code=0&fid_input_price_1=%s&fid_input_price_2=%s&fid_vol_cnt=&fid_trgt_cls_code=0&fid_trgt_exls_cls_code=1111111111",
+		market, priceMin, priceMax)
 
 	raw, err := c.get(ctx, endpoint, params, "FHPST01680000")
 	if err != nil {
@@ -328,11 +332,13 @@ func (c *Client) GetStrengthRank(ctx context.Context, market string) ([]Strength
 // GetExecCountRank fetches the bulk execution count ranking (대량체결건수 상위 FHKST190900C0). Max 30 results.
 // market (fid_input_iscd): "0000"=전체(default), "0001"=거래소, "1001"=코스닥, "2001"=코스피200.
 // sort (fid_rank_sort_cls_code): "0"=매수상위(default), "1"=매도상위.
-func (c *Client) GetExecCountRank(ctx context.Context, market, sort string) ([]ExecCountRankItem, error) {
+// priceMin/priceMax: 가격 범위 필터 (빈값="" 이면 전체 가격 조회).
+// fid_trgt_exls_cls_code=1111111111: ETF/ETN/우선주 등 비정상 종목 제외 시도.
+func (c *Client) GetExecCountRank(ctx context.Context, market, sort, priceMin, priceMax string) ([]ExecCountRankItem, error) {
 	endpoint := "/uapi/domestic-stock/v1/ranking/bulk-trans-num"
 	params := fmt.Sprintf(
-		"?fid_cond_mrkt_div_code=J&fid_cond_scr_div_code=11909&fid_input_iscd=%s&fid_div_cls_code=0&fid_rank_sort_cls_code=%s&fid_input_price_1=&fid_input_price_2=&fid_aply_rang_prc_1=&fid_aply_rang_prc_2=&fid_input_iscd_2=&fid_vol_cnt=&fid_trgt_cls_code=0&fid_trgt_exls_cls_code=0",
-		market, sort)
+		"?fid_cond_mrkt_div_code=J&fid_cond_scr_div_code=11909&fid_input_iscd=%s&fid_div_cls_code=0&fid_rank_sort_cls_code=%s&fid_input_price_1=%s&fid_input_price_2=%s&fid_aply_rang_prc_1=&fid_aply_rang_prc_2=&fid_input_iscd_2=&fid_vol_cnt=&fid_trgt_cls_code=0&fid_trgt_exls_cls_code=1111111111",
+		market, sort, priceMin, priceMax)
 
 	raw, err := c.get(ctx, endpoint, params, "FHKST190900C0")
 	if err != nil {
@@ -356,11 +362,13 @@ func (c *Client) GetExecCountRank(ctx context.Context, market, sort string) ([]E
 // market (fid_input_iscd): "0000"=전체(default), "0001"=거래소, "1001"=코스닥, "2001"=코스피200.
 // period (fid_hour_cls_code): "5", "10", "20"(default), "60", "120".
 // sort (fid_rank_sort_cls_code): "0"=이격도 상위순(default), "1"=이격도 하위순.
-func (c *Client) GetDisparityRank(ctx context.Context, market, period, sort string) ([]DisparityRankItem, error) {
+// priceMin/priceMax: 가격 범위 필터 (빈값="" 이면 전체 가격 조회).
+// fid_trgt_exls_cls_code=1111111111: ETF/ETN/우선주 등 비정상 종목 제외 시도.
+func (c *Client) GetDisparityRank(ctx context.Context, market, period, sort, priceMin, priceMax string) ([]DisparityRankItem, error) {
 	endpoint := "/uapi/domestic-stock/v1/ranking/disparity"
 	params := fmt.Sprintf(
-		"?fid_input_price_2=&fid_cond_mrkt_div_code=J&fid_cond_scr_div_code=20178&fid_div_cls_code=6&fid_rank_sort_cls_code=%s&fid_hour_cls_code=%s&fid_input_iscd=%s&fid_trgt_cls_code=0&fid_trgt_exls_cls_code=0&fid_input_price_1=&fid_vol_cnt=",
-		sort, period, market)
+		"?fid_input_price_2=%s&fid_cond_mrkt_div_code=J&fid_cond_scr_div_code=20178&fid_div_cls_code=6&fid_rank_sort_cls_code=%s&fid_hour_cls_code=%s&fid_input_iscd=%s&fid_trgt_cls_code=0&fid_trgt_exls_cls_code=1111111111&fid_input_price_1=%s&fid_vol_cnt=",
+		priceMax, sort, period, market, priceMin)
 
 	raw, err := c.get(ctx, endpoint, params, "FHPST01780000")
 	if err != nil {
