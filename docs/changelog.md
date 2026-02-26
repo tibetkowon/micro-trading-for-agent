@@ -4,6 +4,36 @@
 
 ---
 
+## 2026-02-26
+
+### [Fix] KIS 토큰 자동 갱신 불동작 3가지 버그 수정 (EGW00123)
+
+**Description:**
+`{"rt_cd":"1","msg_cd":"EGW00123","msg1":"기간이 만료된 token 입니다."}` 오류가 지속 발생하던 문제를 근본 원인부터 수정했습니다.
+
+**원인 1 — StartAutoRefresh 타이머 리셋 버그 (`token.go`)**
+- 기존: `time.NewTicker(20h)` 가 항상 서버 부팅 시점부터 카운트
+- 시나리오: 토큰 발급 18h 후 서버 재시작 → 타이머가 20h 리셋 → 토큰 만료(T+24h) 후 타이머 발동(T+38h) 사이 **14시간 공백** 발생
+- 수정: 서버 시작 시 DB 최신 토큰의 `issued_at` 을 읽어 `(20h - 경과시간)` 을 첫 delay로 계산. 이미 지났으면 즉시 재발급.
+
+**원인 2 — API 호출 직전 만료 검사 없음 (`client.go`)**
+- 기존: `GetCurrentToken()` → 만료 여부 무시하고 DB 최신 토큰 반환
+- 수정: `EnsureToken()` 으로 교체 → "잔여 1시간 미만이면 재발급" 로직이 API 호출 직전마다 실행됨
+- 적용 위치: `get()` (L254), `placeOrder()` (L284) 양쪽 모두
+
+**원인 3 — KIS GET 응답의 rt_cd 에러 미감지 (`client.go`)**
+- 기존: HTTP 200이면 무조건 성공으로 처리. KIS는 토큰 만료를 HTTP 200 + `rt_cd:"1"` 로 반환하므로 에러가 무시됨
+- 수정: HTTP 200 이후 응답 본문에서 `rt_cd` 파싱 추가. `rt_cd=="1"` 이면 `logAPIError()` 호출 및 에러 반환. `EGW00123` 인 경우 즉시 `IssueToken()` 트리거 (안전망)
+
+**Files Touched:**
+- `backend/internal/kis/token.go` — `StartAutoRefresh` 타이머 로직 재작성
+- `backend/internal/kis/client.go` — `EnsureToken` 교체, `rt_cd` 응답 본문 검사 추가
+
+**Pending/Next Steps:**
+- KIS 토큰 만료 에러 발생 후 다음 요청이 새 토큰으로 성공하는지 실제 환경에서 확인
+
+---
+
 ## 2026-02-25 (4)
 
 ### [Refactor] 대시보드/잔고 API TTTC8434R 단일 호출로 최적화 + 에이전트 주문 흐름 개선
