@@ -244,12 +244,30 @@ func (h *Handler) GetFeasibility(c *gin.Context) {
 	})
 }
 
+// resolvePriceFilter returns priceMin/priceMax for ranking API calls.
+// use_balance_filter=true: 잔액 API(TTTC8434R)로 예수금 조회 후 priceMax로 자동 설정.
+// price_min/price_max: 직접 입력값 (use_balance_filter가 true이면 무시됨).
+// 잔액 조회 실패 또는 예수금=0이면 필터 미적용(빈값 반환).
+func (h *Handler) resolvePriceFilter(c *gin.Context) (priceMin, priceMax string) {
+	if c.Query("use_balance_filter") == "true" {
+		summary, err := h.client.GetInquireBalance(c.Request.Context())
+		if err == nil && summary.DepositAmt != "" && summary.DepositAmt != "0" {
+			return "", summary.DepositAmt
+		}
+		return "", ""
+	}
+	return c.Query("price_min"), c.Query("price_max")
+}
+
 // GET /api/ranking/volume?market=J&sort=0 — 거래량 순위 (FHPST01710000, max 30)
 // sort: 0=평균거래량(default), 1=거래량증가율, 2=거래회전율, 3=거래대금순
+// price_min/price_max: 가격 범위 직접 입력 (원). use_balance_filter=true: 예수금 기준 자동 설정.
+// ETF/ETN/우선주 등 비정상 종목은 항상 제외됨.
 func (h *Handler) GetVolumeRank(c *gin.Context) {
 	market := c.DefaultQuery("market", "J")
 	sort := c.DefaultQuery("sort", "0")
-	items, err := agent.GetVolumeRank(c.Request.Context(), h.client, market, sort)
+	priceMin, priceMax := h.resolvePriceFilter(c)
+	items, err := agent.GetVolumeRank(c.Request.Context(), h.client, market, sort, priceMin, priceMax)
 	if err != nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": err.Error()})
 		return
@@ -259,9 +277,12 @@ func (h *Handler) GetVolumeRank(c *gin.Context) {
 
 // GET /api/ranking/strength?market=0000 — 체결강도 상위 (FHPST01680000, max 30)
 // market: 0000=전체(default), 0001=거래소, 1001=코스닥, 2001=코스피200
+// price_min/price_max: 가격 범위 직접 입력 (원). use_balance_filter=true: 예수금 기준 자동 설정.
+// ETF/ETN/우선주 등 비정상 종목은 항상 제외 시도.
 func (h *Handler) GetStrengthRank(c *gin.Context) {
 	market := c.DefaultQuery("market", "0000")
-	items, err := agent.GetStrengthRank(c.Request.Context(), h.client, market)
+	priceMin, priceMax := h.resolvePriceFilter(c)
+	items, err := agent.GetStrengthRank(c.Request.Context(), h.client, market, priceMin, priceMax)
 	if err != nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": err.Error()})
 		return
@@ -271,10 +292,13 @@ func (h *Handler) GetStrengthRank(c *gin.Context) {
 
 // GET /api/ranking/exec-count?market=0000&sort=0 — 대량체결건수 상위 (FHKST190900C0, max 30)
 // sort: 0=매수상위(default), 1=매도상위
+// price_min/price_max: 가격 범위 직접 입력 (원). use_balance_filter=true: 예수금 기준 자동 설정.
+// ETF/ETN/우선주 등 비정상 종목은 항상 제외 시도.
 func (h *Handler) GetExecCountRank(c *gin.Context) {
 	market := c.DefaultQuery("market", "0000")
 	sort := c.DefaultQuery("sort", "0")
-	items, err := agent.GetExecCountRank(c.Request.Context(), h.client, market, sort)
+	priceMin, priceMax := h.resolvePriceFilter(c)
+	items, err := agent.GetExecCountRank(c.Request.Context(), h.client, market, sort, priceMin, priceMax)
 	if err != nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": err.Error()})
 		return
@@ -284,11 +308,14 @@ func (h *Handler) GetExecCountRank(c *gin.Context) {
 
 // GET /api/ranking/disparity?market=0000&period=20&sort=0 — 이격도 순위 (FHPST01780000, max 30)
 // period: 5, 10, 20(default), 60, 120 / sort: 0=이격도상위(default), 1=이격도하위
+// price_min/price_max: 가격 범위 직접 입력 (원). use_balance_filter=true: 예수금 기준 자동 설정.
+// ETF/ETN/우선주 등 비정상 종목은 항상 제외 시도.
 func (h *Handler) GetDisparityRank(c *gin.Context) {
 	market := c.DefaultQuery("market", "0000")
 	period := c.DefaultQuery("period", "20")
 	sort := c.DefaultQuery("sort", "0")
-	items, err := agent.GetDisparityRank(c.Request.Context(), h.client, market, period, sort)
+	priceMin, priceMax := h.resolvePriceFilter(c)
+	items, err := agent.GetDisparityRank(c.Request.Context(), h.client, market, period, sort, priceMin, priceMax)
 	if err != nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": err.Error()})
 		return
