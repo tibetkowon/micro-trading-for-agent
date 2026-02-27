@@ -58,8 +58,9 @@ when: 사용자가 "주식 사줘", "잔고 어때?", "종목 추천해줘" 등 
 |----------|------|
 | `GET /api/orders/feasibility?code={code}` | 주문가능수량(orderable_qty), 주문가능현금(available_cash) |
 | `POST /api/orders` | 매수/매도 주문 제출 |
+| `POST /api/orders/{id}/cancel` | KIS 미체결 주문 취소 (TTTC0084R 확인 → TTTC0013U 취소) |
 | `GET /api/orders?limit=50&offset=0&sync=true` | 주문 내역 조회 (sync=true: KIS 체결 상태 즉시 반영) |
-| `DELETE /api/orders/{id}` | 주문 레코드 삭제 |
+| `DELETE /api/orders/{id}` | 주문 레코드 삭제 (로컬 DB에서만 제거, KIS 취소 아님) |
 
 **POST /api/orders 요청 바디:**
 ```json
@@ -115,8 +116,21 @@ GET /api/ranking/volume?market=NX&price_min=10000&price_max=100000
 
 ---
 
+**POST /api/orders/{id}/cancel 응답:**
+```json
+{
+  "order_id": 42,
+  "kis_order_id": "0001569139",
+  "status": "CANCELLED"
+}
+```
+> 오류 시: `{"error": "오류 메시지"}` — 이미 체결된 주문, KIS 취소 불가 상태, DB에 없는 주문 등
+
+---
+
 ## 주요 동작 원칙
 
 - `GET /api/orders/feasibility` 응답에서 `orderable_qty == 0` → 해당 종목 포기, `available_cash` 기준으로 종목 재선정
 - 순위 API 응답에서 종목 선정 후 `GET /api/stock/{code}`로 MA5/MA20 등 기술적 지표 추가 확인 권장
 - 주문 후 `GET /api/orders?sync=true`로 체결 확인; `PARTIALLY_FILLED` 시 잔여 수량 추가 주문 여부 판단
+- **주문 취소:** `POST /api/orders/{id}/cancel` 호출 → 백엔드가 TTTC0084R(취소가능조회) 확인 후 TTTC0013U(취소) 자동 처리. `DELETE /api/orders/{id}` 는 로컬 DB 레코드만 삭제하며 실제 KIS 취소가 아님.

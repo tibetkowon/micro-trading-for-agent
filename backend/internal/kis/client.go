@@ -149,6 +149,20 @@ type OrderResponse struct {
 	OrderTime  string `json:"ord_tmd"` // 주문시각
 }
 
+// CancellableOrderItem holds one entry from the cancellable-order query (TTTC0084R).
+type CancellableOrderItem struct {
+	OrdGnoBrno  string `json:"ord_gno_brno"` // 주문채번지점번호 (KRX_FWDG_ORD_ORGNO로 사용)
+	Odno        string `json:"odno"`         // 주문번호
+	OrdDvsnCd   string `json:"ord_dvsn_cd"`  // 주문구분코드 (00=지정가, 01=시장가 등)
+	OrdUnpr     string `json:"ord_unpr"`     // 주문단가
+	OrdQty      string `json:"ord_qty"`      // 주문수량
+	PsblQty     string `json:"psbl_qty"`     // 정정/취소 가능 수량
+	TotCcldQty  string `json:"tot_ccld_qty"` // 총 체결 수량
+	Pdno        string `json:"pdno"`         // 종목코드
+	PrdtName    string `json:"prdt_name"`    // 종목명
+	SllBuyDvsnCd string `json:"sll_buy_dvsn_cd"` // 01=매도, 02=매수
+}
+
 // --- Public API methods ---
 
 // GetStockPrice fetches the current price for the given stock code.
@@ -386,6 +400,99 @@ func (c *Client) GetDisparityRank(ctx context.Context, market, period, sort, pri
 		return []DisparityRankItem{}, nil
 	}
 	return result.Output, nil
+}
+
+// GetCancellableOrders fetches orders that can still be cancelled or amended (TTTC0084R).
+// Returns up to 50 orders. Only pending (미체결) orders are included.
+func (c *Client) GetCancellableOrders(ctx context.Context) ([]CancellableOrderItem, error) {
+	endpoint := "/uapi/domestic-stock/v1/trading/inquire-psbl-rvsecncl"
+	params := fmt.Sprintf("?CANO=%s&ACNT_PRDT_CD=%s&CTX_AREA_FK100=&CTX_AREA_NK100=&INQR_DVSN_1=0&INQR_DVSN_2=0",
+		c.accountNo, c.accountType)
+
+	raw, err := c.get(ctx, endpoint, params, "TTTC0084R")
+	if err != nil {
+		return nil, err
+	}
+
+	var result struct {
+		Output  []CancellableOrderItem `json:"output"`
+		MsgCode string                 `json:"msg_cd"`
+		Msg     string                 `json:"msg1"`
+	}
+	if err := json.Unmarshal(raw, &result); err != nil {
+		c.logAPIError(endpoint, "PARSE_ERROR", string(raw))
+		return nil, fmt.Errorf("parse cancellable orders: %w", err)
+	}
+	if result.Output == nil {
+		return []CancellableOrderItem{}, nil
+	}
+	return result.Output, nil
+}
+
+// CancelKISOrder submits a cancellation request for an existing order (TTTC0013U).
+// krxOrgNo: ord_gno_brno from GetCancellableOrders (KRX_FWDG_ORD_ORGNO).
+// kisOrderID: original KIS order number (ORGN_ODNO).
+// ordDvsnCd: order type code from the original order (ORD_DVSN).
+// ordUnpr: original order price (ORD_UNPR).
+func (c *Client) CancelKISOrder(ctx context.Context, krxOrgNo, kisOrderID, ordDvsnCd, ordUnpr string) (*OrderResponse, error) {
+	if err := c.rateLimiter.Wait(ctx); err != nil {
+		return nil, fmt.Errorf("rate limiter: %w", err)
+	}
+
+	tok, err := c.tokenManager.EnsureToken(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("get token: %w", err)
+	}
+
+	endpoint := "/uapi/domestic-stock/v1/trading/order-rvsecncl"
+	body, _ := json.Marshal(map[string]string{
+		"CANO":                c.accountNo,
+		"ACNT_PRDT_CD":       c.accountType,
+		"KRX_FWDG_ORD_ORGNO": krxOrgNo,
+		"ORGN_ODNO":           kisOrderID,
+		"ORD_DVSN":            ordDvsnCd,
+		"RVSE_CNCL_DVSN_CD":  "02", // 02 = 취소
+		"ORD_QTY":             "0",  // QTY_ALL_ORD_YN=Y 사용 시 0으로 설정
+		"ORD_UNPR":            ordUnpr,
+		"QTY_ALL_ORD_YN":     "Y", // 잔량 전부 취소
+	})
+
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+endpoint, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	c.setHeaders(httpReq, tok.AccessToken, "TTTC0013U")
+	httpReq.Header.Set("Content-Type", "application/json; charset=utf-8")
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	raw, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		c.logAPIError(endpoint, fmt.Sprintf("HTTP-%d", resp.StatusCode), string(raw))
+		return nil, fmt.Errorf("KIS POST %s returned %d", endpoint, resp.StatusCode)
+	}
+
+	var result struct {
+		Output  OrderResponse `json:"output"`
+		RtCd    string        `json:"rt_cd"`
+		MsgCode string        `json:"msg_cd"`
+		Msg     string        `json:"msg1"`
+	}
+	if err := json.Unmarshal(raw, &result); err != nil {
+		c.logAPIError(endpoint, "PARSE_ERROR", string(raw))
+		return nil, fmt.Errorf("parse cancel order response: %w", err)
+	}
+
+	if result.RtCd != "0" {
+		c.logAPIError(endpoint, result.MsgCode, string(raw))
+		return nil, fmt.Errorf("KIS cancel error [%s]: %s", result.MsgCode, result.Msg)
+	}
+
+	return &result.Output, nil
 }
 
 // GetOrderHistory fetches recent order history.
