@@ -104,15 +104,17 @@ export default function Orders() {
                         <span className="ml-1.5 text-xs text-gray-500 font-mono">{o.stock_code}</span>
                       )}
                     </td>
-                    <td className={`py-2 pr-4 font-semibold ${o.order_type === 'BUY' ? 'text-blue-400' : 'text-red-400'}`}>
+                    <td className={`py-2 pr-4 font-semibold ${o.order_type === 'BUY' ? 'text-red-400' : 'text-blue-400'}`}>
                       {o.order_type === 'BUY' ? '매수' : '매도'}
                     </td>
                     <td className="py-2 pr-4">{o.qty.toLocaleString()}</td>
                     <td className="py-2 pr-4">
                       {isFilled && o.filled_price > 0 ? (
                         <span className="text-yellow-400 font-semibold">{fmtPrice(o.filled_price)}</span>
-                      ) : (
+                      ) : o.price > 0 ? (
                         <span className="text-gray-300">{fmtPrice(o.price)}</span>
+                      ) : (
+                        <span className="text-gray-500 text-xs">시장가</span>
                       )}
                     </td>
                     <td className="py-2 pr-4"><StatusBadge status={o.status} /></td>

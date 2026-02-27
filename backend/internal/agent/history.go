@@ -34,7 +34,7 @@ func GetOrderHistory(ctx context.Context, client *kis.Client, db *database.DB) (
 			// 미체결 — 종목명만 업데이트
 			if stockName != "" {
 				_, _ = db.ExecContext(ctx,
-					`UPDATE orders SET stock_name = ? WHERE kis_order_id = ? AND stock_name = ''`,
+					`UPDATE orders SET stock_name = ? WHERE CAST(kis_order_id AS INTEGER) = CAST(? AS INTEGER) AND stock_name = ''`,
 					stockName, kisOrderID,
 				)
 			}
@@ -51,7 +51,7 @@ func GetOrderHistory(ctx context.Context, client *kis.Client, db *database.DB) (
 
 		_, _ = db.ExecContext(ctx,
 			`UPDATE orders SET status = ?, filled_price = ?, stock_name = ?
-			 WHERE kis_order_id = ? AND status IN ('PENDING','PARTIALLY_FILLED')`,
+			 WHERE CAST(kis_order_id AS INTEGER) = CAST(? AS INTEGER) AND status IN ('PENDING','PARTIALLY_FILLED')`,
 			string(newStatus), filledPrice, stockName, kisOrderID,
 		)
 	}
