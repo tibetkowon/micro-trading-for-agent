@@ -151,15 +151,15 @@ type OrderResponse struct {
 
 // CancellableOrderItem holds one entry from the cancellable-order query (TTTC0084R).
 type CancellableOrderItem struct {
-	OrdGnoBrno  string `json:"ord_gno_brno"` // 주문채번지점번호 (KRX_FWDG_ORD_ORGNO로 사용)
-	Odno        string `json:"odno"`         // 주문번호
-	OrdDvsnCd   string `json:"ord_dvsn_cd"`  // 주문구분코드 (00=지정가, 01=시장가 등)
-	OrdUnpr     string `json:"ord_unpr"`     // 주문단가
-	OrdQty      string `json:"ord_qty"`      // 주문수량
-	PsblQty     string `json:"psbl_qty"`     // 정정/취소 가능 수량
-	TotCcldQty  string `json:"tot_ccld_qty"` // 총 체결 수량
-	Pdno        string `json:"pdno"`         // 종목코드
-	PrdtName    string `json:"prdt_name"`    // 종목명
+	OrdGnoBrno   string `json:"ord_gno_brno"`    // 주문채번지점번호 (KRX_FWDG_ORD_ORGNO로 사용)
+	Odno         string `json:"odno"`            // 주문번호
+	OrdDvsnCd    string `json:"ord_dvsn_cd"`     // 주문구분코드 (00=지정가, 01=시장가 등)
+	OrdUnpr      string `json:"ord_unpr"`        // 주문단가
+	OrdQty       string `json:"ord_qty"`         // 주문수량
+	PsblQty      string `json:"psbl_qty"`        // 정정/취소 가능 수량
+	TotCcldQty   string `json:"tot_ccld_qty"`    // 총 체결 수량
+	Pdno         string `json:"pdno"`            // 종목코드
+	PrdtName     string `json:"prdt_name"`       // 종목명
 	SllBuyDvsnCd string `json:"sll_buy_dvsn_cd"` // 01=매도, 02=매수
 }
 
@@ -446,14 +446,14 @@ func (c *Client) CancelKISOrder(ctx context.Context, krxOrgNo, kisOrderID, ordDv
 
 	endpoint := "/uapi/domestic-stock/v1/trading/order-rvsecncl"
 	body, _ := json.Marshal(map[string]string{
-		"CANO":                c.accountNo,
+		"CANO":               c.accountNo,
 		"ACNT_PRDT_CD":       c.accountType,
 		"KRX_FWDG_ORD_ORGNO": krxOrgNo,
-		"ORGN_ODNO":           kisOrderID,
-		"ORD_DVSN":            ordDvsnCd,
+		"ORGN_ODNO":          kisOrderID,
+		"ORD_DVSN":           ordDvsnCd,
 		"RVSE_CNCL_DVSN_CD":  "02", // 02 = 취소
-		"ORD_QTY":             "0",  // QTY_ALL_ORD_YN=Y 사용 시 0으로 설정
-		"ORD_UNPR":            ordUnpr,
+		"ORD_QTY":            "0",  // QTY_ALL_ORD_YN=Y 사용 시 0으로 설정
+		"ORD_UNPR":           ordUnpr,
 		"QTY_ALL_ORD_YN":     "Y", // 잔량 전부 취소
 	})
 
