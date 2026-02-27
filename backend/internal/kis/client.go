@@ -391,8 +391,9 @@ func (c *Client) GetDisparityRank(ctx context.Context, market, period, sort, pri
 // GetOrderHistory fetches recent order history.
 func (c *Client) GetOrderHistory(ctx context.Context) ([]map[string]any, error) {
 	endpoint := "/uapi/domestic-stock/v1/trading/inquire-daily-ccld"
-	params := fmt.Sprintf("?CANO=%s&ACNT_PRDT_CD=%s&INQR_STRT_DT=&INQR_END_DT=&SLL_BUY_DVSN_CD=00&INQR_DVSN=00&PDNO=&CCLD_DVSN=01&ORD_GNO_BRNO=&ODNO=&CANC_YN=N&CTX_AREA_FK100=&CTX_AREA_NK100=",
-		c.accountNo, c.accountType)
+	today := time.Now().Format("20060102")
+	params := fmt.Sprintf("?CANO=%s&ACNT_PRDT_CD=%s&INQR_STRT_DT=%s&INQR_END_DT=%s&SLL_BUY_DVSN_CD=00&INQR_DVSN=00&PDNO=&CCLD_DVSN=00&ORD_GNO_BRNO=&ODNO=&CANC_YN=N&CTX_AREA_FK100=&CTX_AREA_NK100=",
+		c.accountNo, c.accountType, today, today)
 
 	raw, err := c.get(ctx, endpoint, params, "TTTC8001R")
 	if err != nil {
