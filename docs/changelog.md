@@ -4,6 +4,61 @@
 
 ---
 
+## 2026-02-27
+
+### [Feature] 기술적 지표 추가 — 거래대금, RSI(14), MACD(12,26,9)
+
+**Description:**
+에이전트가 종목 진입 판단 시 사용할 수 있도록 `GET /api/stock/:code` 응답에 3가지 지표를 추가했습니다.
+
+**추가된 응답 필드:**
+- `trading_value`: 거래대금(current_price × volume, KRW). 거래량보다 실질 자금 유입을 직관적으로 반영
+- `rsi14`: 5분봉 기준 RSI(14) — Wilder's smoothing 방식. 0 = 데이터 부족
+- `macd_line / macd_signal / macd_histogram`: 5분봉 기준 MACD(12,26,9). 0 = 데이터 부족
+
+**구현 방식:**
+- 5분봉 데이터: 1분봉 200개 fetch → 5분봉 집계 (~40봉). MACD 최소 요구 34봉 충족
+- RSI: Wilder's smoothing (기본 SMA 시드 → 이후 스무딩 평균)
+- MACD: calcEMA(closes, period) 슬라이스 기반 → MACD series → Signal EMA(9)
+- 장 시작 직후 / 거래 정지 종목은 0 반환 (에이전트가 해당 지표 판단 보류)
+
+**Files Touched:**
+- `backend/internal/agent/stock_info.go` — StockInfo 구조체 확장 + calcRSI/calcEMA/calcMACD 헬퍼 추가 + GetStockInfo에 5분봉 fetch 및 지표 계산 로직
+
+**Pending/Next Steps:**
+- 없음
+
+---
+
+### [Feature] 주문취소 API 추가 — POST /api/orders/:id/cancel
+
+**Description:**
+에이전트가 미체결 주문을 KIS에 실제 취소 요청할 수 있는 엔드포인트를 추가했습니다. 기존 `DELETE /api/orders/:id`는 로컬 DB 레코드만 삭제하고 KIS에 취소 요청을 하지 않던 문제를 해결했습니다.
+
+**동작 흐름:**
+1. 로컬 DB에서 kis_order_id 및 현재 status 조회
+2. TTTC0084R(주식정정취소가능주문조회) 호출 → KIS 취소 가능 목록에서 해당 주문 확인 + psbl_qty > 0 검증
+3. TTTC0013U(주식주문 정정취소, RVSE_CNCL_DVSN_CD=02) 호출 → 잔량 전부(QTY_ALL_ORD_YN=Y) 취소
+4. 로컬 DB status → CANCELLED 업데이트
+
+**오류 케이스:**
+- 이미 FILLED된 주문 → 400 오류
+- KIS 취소 가능 목록에 없는 주문(이미 체결/결제) → 오류
+- psbl_qty == 0 → 오류
+
+**Files Touched:**
+- `backend/internal/kis/client.go` — CancellableOrderItem DTO, GetCancellableOrders(TTTC0084R), CancelKISOrder(TTTC0013U) 추가
+- `backend/internal/agent/order.go` — CancelOrderResult + CancelOrder() 함수 추가
+- `backend/internal/api/handlers.go` — CancelOrder 핸들러 추가
+- `backend/internal/api/router.go` — POST /api/orders/:id/cancel 라우트 추가
+- `SKILL.md`, `docs/agent-skill.md` — 에이전트 가이드 전면 개편 (워크플로우, 지표 해석, 주문 상태 레퍼런스 추가)
+
+**Pending/Next Steps:**
+- 실제 KIS 환경에서 TTTC0084R / TTTC0013U 호출 확인
+- PARTIALLY_FILLED 주문 취소 시 psbl_qty가 잔여 수량을 정확히 반영하는지 확인
+
+---
+
 ## 2026-02-26 (2)
 
 ### [Feature] 순위 API ETF/비정상종목 제외 및 가격 필터 추가

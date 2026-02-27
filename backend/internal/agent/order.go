@@ -11,6 +11,12 @@ import (
 	"github.com/micro-trading-for-agent/backend/internal/models"
 )
 
+// CancelOrderResult is returned after a successful order cancellation.
+type CancelOrderResult struct {
+	OrderID    int64
+	KISOrderID string // 취소 주문번호 (KIS에서 새로 채번된 번호)
+}
+
 // PlaceOrderRequest contains the parameters for a new order.
 type PlaceOrderRequest struct {
 	StockCode string
@@ -106,5 +112,76 @@ func PlaceOrder(ctx context.Context, client *kis.Client, db *database.DB, req Pl
 		OrderID:    orderID,
 		KISOrderID: kisOrderID,
 		Status:     status,
+	}, nil
+}
+
+// CancelOrder cancels a pending KIS order identified by its local DB id.
+//
+// Flow:
+//  1. Fetch local order to get kis_order_id and current status.
+//  2. Call TTTC0084R to get the cancellable order list and verify psbl_qty > 0.
+//  3. Call TTTC0013U to submit the cancellation.
+//  4. Update local DB status to CANCELLED.
+func CancelOrder(ctx context.Context, client *kis.Client, db *database.DB, orderID int64) (*CancelOrderResult, error) {
+	// 1. Look up local order
+	var kisOrderID, status string
+	err := db.QueryRowContext(ctx,
+		`SELECT kis_order_id, status FROM orders WHERE id = ?`, orderID,
+	).Scan(&kisOrderID, &status)
+	if err != nil {
+		return nil, fmt.Errorf("order %d not found: %w", orderID, err)
+	}
+	if kisOrderID == "" {
+		return nil, fmt.Errorf("order %d has no KIS order ID (may have failed on submission)", orderID)
+	}
+	if status == string(models.OrderStatusCancelled) {
+		return nil, fmt.Errorf("order %d is already cancelled", orderID)
+	}
+	if status == string(models.OrderStatusFilled) {
+		return nil, fmt.Errorf("order %d is already filled and cannot be cancelled", orderID)
+	}
+
+	// 2. Get cancellable orders from KIS to find krxOrgNo and psbl_qty
+	cancellable, err := client.GetCancellableOrders(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("GetCancellableOrders: %w", err)
+	}
+
+	var found *kis.CancellableOrderItem
+	for i := range cancellable {
+		if cancellable[i].Odno == kisOrderID {
+			found = &cancellable[i]
+			break
+		}
+	}
+	if found == nil {
+		return nil, fmt.Errorf("order %s not found in KIS cancellable list (may be already filled or settled)", kisOrderID)
+	}
+
+	psblQty, _ := strconv.Atoi(found.PsblQty)
+	if psblQty <= 0 {
+		return nil, fmt.Errorf("order %s has no cancellable quantity (psbl_qty=%s)", kisOrderID, found.PsblQty)
+	}
+
+	// 3. Submit cancellation to KIS
+	cancelResp, err := client.CancelKISOrder(ctx, found.OrdGnoBrno, kisOrderID, found.OrdDvsnCd, found.OrdUnpr)
+	if err != nil {
+		return nil, fmt.Errorf("CancelKISOrder: %w", err)
+	}
+
+	// 4. Update local DB status
+	_, dbErr := db.ExecContext(ctx,
+		`UPDATE orders SET status = ? WHERE id = ?`,
+		string(models.OrderStatusCancelled), orderID,
+	)
+	if dbErr != nil {
+		// KIS 취소는 성공했지만 DB 갱신 실패 — 오류를 반환하되 취소 결과는 포함
+		return &CancelOrderResult{OrderID: orderID, KISOrderID: cancelResp.KISOrderID},
+			fmt.Errorf("KIS cancel succeeded but DB update failed: %w", dbErr)
+	}
+
+	return &CancelOrderResult{
+		OrderID:    orderID,
+		KISOrderID: cancelResp.KISOrderID,
 	}, nil
 }

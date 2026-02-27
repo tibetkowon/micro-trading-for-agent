@@ -23,6 +23,7 @@ func SetupRouter(h *Handler, frontendDist string) *gin.Engine {
 		api.GET("/stock/:code/chart", h.GetStockChart)
 		api.GET("/orders", h.GetOrders)
 		api.POST("/orders", h.PlaceOrder)
+		api.POST("/orders/:id/cancel", h.CancelOrder)
 		api.DELETE("/orders/:id", h.DeleteOrder)
 		api.GET("/orders/feasibility", h.GetFeasibility)
 		api.GET("/logs/kis", h.GetKISLogs)

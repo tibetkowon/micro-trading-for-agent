@@ -60,6 +60,26 @@ func (h *Handler) GetOrders(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"orders": orders, "limit": limit, "offset": offset})
 }
 
+// POST /api/orders/:id/cancel — KIS 미체결 주문 취소 (TTTC0084R 확인 후 TTTC0013U 취소 요청)
+// 이미 체결된 주문(FILLED)이나 존재하지 않는 KIS 주문번호는 오류 반환.
+func (h *Handler) CancelOrder(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		return
+	}
+	result, err := agent.CancelOrder(c.Request.Context(), h.client, h.db, id)
+	if err != nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"order_id":     result.OrderID,
+		"kis_order_id": result.KISOrderID,
+		"status":       "CANCELLED",
+	})
+}
+
 // DELETE /api/orders/:id
 func (h *Handler) DeleteOrder(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
