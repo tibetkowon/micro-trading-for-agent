@@ -30,12 +30,12 @@ func GetOrderHistory(ctx context.Context, client *kis.Client, db *database.DB) (
 		stockName, _ := h["prdt_name"].(string)
 		ccldQty, _ := h["tot_ccld_qty"].(string)
 		ordQty, _ := h["ord_qty"].(string)
-		avgPrvs, _ := h["avg_prvs"].(string)   // 평균체결가
-		ordUnpr, _ := h["ord_unpr"].(string)   // 주문단가
+		avgPrvs, _ := h["avg_prvs"].(string)       // 평균체결가
+		ordUnpr, _ := h["ord_unpr"].(string)       // 주문단가
 		sllBuy, _ := h["sll_buy_dvsn_cd"].(string) // 01=매도 02=매수
-		ordDt, _ := h["ord_dt"].(string)        // 주문일자 YYYYMMDD
-		ordTmd, _ := h["ord_tmd"].(string)      // 주문시각 HHMMSS
-		cancYn, _ := h["cncl_yn"].(string)      // 취소여부 Y/N
+		ordDt, _ := h["ord_dt"].(string)           // 주문일자 YYYYMMDD
+		ordTmd, _ := h["ord_tmd"].(string)         // 주문시각 HHMMSS
+		cancYn, _ := h["cncl_yn"].(string)         // 취소여부 Y/N
 
 		// 로컬 DB에 이미 존재하는지 확인
 		var existing int
