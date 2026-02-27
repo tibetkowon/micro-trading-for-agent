@@ -1,5 +1,6 @@
 ---
-name: ai-trading-agent description: micro-trading 백엔드 서버 API를 사용하여 주식 시장 분석, 잔고 확인 및 매매 주문을 수행합니다.
+name: ai-trading-agent 
+description: micro-trading 백엔드 서버 API를 사용하여 주식 시장 분석, 잔고 확인 및 매매 주문을 수행합니다.
 when: 사용자가 "주식 사줘", "잔고 어때?", "종목 추천해줘" 등 트레이딩 관련 명령을 내릴 때
 ---
 
