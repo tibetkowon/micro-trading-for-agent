@@ -61,7 +61,7 @@ type StockPriceResponse struct {
 // AvailableOrderResponse holds response from inquire-psbl-order (매수가능조회 TTTC8908R).
 // Used by the agent right before placing an order for a specific stock.
 type AvailableOrderResponse struct {
-	OrderableQty  string `json:"ord_psbl_qty"`  // 주문가능수량 (0이면 주문 불가)
+	OrderableQty  string `json:"nrcvb_buy_qty"` // 미수없는매수수량 (TTTC8908R, 미수 미사용 시)
 	AvailableCash string `json:"ord_psbl_cash"` // 주문가능현금 (재선정 기준 금액)
 }
 

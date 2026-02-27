@@ -22,7 +22,7 @@ type PlaceOrderRequest struct {
 
 // OrderFeasibility is returned by CheckOrderFeasibility.
 type OrderFeasibility struct {
-	OrderableQty  int     // TTTC8908R ord_psbl_qty — 0이면 주문 불가
+	OrderableQty  int     // TTTC8908R nrcvb_buy_qty (미수없는매수수량) — 0이면 주문 불가
 	AvailableCash float64 // TTTC8908R ord_psbl_cash — 재선정 시 예산 기준
 }
 
