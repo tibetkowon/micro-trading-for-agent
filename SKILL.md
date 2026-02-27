@@ -49,7 +49,7 @@ when: 사용자가 "주식 사줘", "잔고 어때?", "종목 추천해줘" 등 
 
 | Endpoint | 설명 |
 |----------|------|
-| `GET /api/stock/{code}` | 현재가, 등락률, 거래량, MA5, MA20 |
+| `GET /api/stock/{code}` | 현재가, 등락률, 거래량, 거래대금, MA5, MA20, RSI14, MACD(line/signal/histogram) |
 | `GET /api/stock/{code}/chart?interval={1m|5m|1h}` | 당일 OHLCV 캔들 (5m: 장 전체 78봉, 1h: 당일 전체 시간봉) |
 
 ### 주문
@@ -72,6 +72,28 @@ when: 사용자가 "주식 사줘", "잔고 어때?", "종목 추천해줘" 등 
   "price": 0
 }
 ```
+
+**GET /api/stock/{code} 응답 필드:**
+```json
+{
+  "stock_code": "005930",
+  "current_price": "75400",
+  "change_rate": "1.21",
+  "volume": "12345678",
+  "trading_value": 929629327200,
+  "ma5": 74820.0,
+  "ma20": 73650.0,
+  "rsi14": 58.32,
+  "macd_line": 312.45,
+  "macd_signal": 280.12,
+  "macd_histogram": 32.33
+}
+```
+> 지표 해석:
+> - `trading_value`: 거래대금(원). 거래량보다 자본 유입량을 직관적으로 반영.
+> - `rsi14`: RSI(14), 5분봉 기준. **> 70** 과매수(진입 주의), **< 30** 과매도(반등 기대).
+> - `macd_line` / `macd_signal` / `macd_histogram`: 5분봉 MACD(12,26,9). histogram > 0 & 상승 전환 = 강세 신호.
+> - 값이 `0`이면 데이터 부족(장 시작 직후, 거래 정지 등).
 
 ### 순위 (Rankings)
 
@@ -134,3 +156,9 @@ GET /api/ranking/volume?market=NX&price_min=10000&price_max=100000
 - 순위 API 응답에서 종목 선정 후 `GET /api/stock/{code}`로 MA5/MA20 등 기술적 지표 추가 확인 권장
 - 주문 후 `GET /api/orders?sync=true`로 체결 확인; `PARTIALLY_FILLED` 시 잔여 수량 추가 주문 여부 판단
 - **주문 취소:** `POST /api/orders/{id}/cancel` 호출 → 백엔드가 TTTC0084R(취소가능조회) 확인 후 TTTC0013U(취소) 자동 처리. `DELETE /api/orders/{id}` 는 로컬 DB 레코드만 삭제하며 실제 KIS 취소가 아님.
+- **기술적 지표 활용 원칙:**
+  - `trading_value`가 높을수록 실질 자금 유입이 큰 종목 (거래량 단독보다 신뢰도 높음)
+  - `rsi14 > 70`: 과매수 → 진입 자제 / `rsi14 < 30`: 과매도 → 반등 관찰
+  - `macd_histogram > 0` & 이전 봉 대비 상승: 상승 모멘텀 유지 신호 → 매수 우호
+  - `macd_histogram < 0` & 하락 전환: 추세 약화 → 신규 매수 주의
+  - 지표가 모두 `0`이면 데이터 부족(장 시작 직후 등); 판단 보류 후 재조회
