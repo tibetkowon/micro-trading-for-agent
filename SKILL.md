@@ -21,7 +21,7 @@ when: 사용자가 "주식 사줘", "잔고 어때?", "종목 추천해줘" 등 
 - API Rate Limit: 15 TPS (백엔드 자동 관리)
 - Token Management: 20시간 자동 갱신
 - Order types: `price=0` (시장가), `price>0` (지정가)
-- Order sync: 백엔드 스케줄러가 3분마다 KIS 체결 상태 자동 갱신
+- Order sync: 백엔드 스케줄러가 3분마다 KIS 체결 상태 자동 갱신 + **수동 거래 자동 임포트** (사용자가 KIS 앱에서 직접 거래한 내역 포함)
 
 ---
 
@@ -108,7 +108,7 @@ when: 사용자가 "주식 사줘", "잔고 어때?", "종목 추천해줘" 등 
 | `GET /api/orders/feasibility?code={code}` | 주문가능수량(orderable_qty), 주문가능현금(available_cash) |
 | `POST /api/orders` | 매수/매도 주문 제출 |
 | `POST /api/orders/{id}/cancel` | KIS 미체결 주문 취소 (TTTC0084R 확인 → TTTC0013U 취소) |
-| `GET /api/orders?limit=50&offset=0&sync=true` | 주문 내역 조회 (sync=true: KIS 체결 상태 즉시 반영) |
+| `GET /api/orders?limit=50&offset=0&sync=true` | 주문 내역 조회 (sync=true: KIS 체결 상태 즉시 반영 + 수동 거래 임포트) |
 | `DELETE /api/orders/{id}` | 주문 레코드 삭제 (로컬 DB에서만 제거, KIS 취소 아님) |
 
 **POST /api/orders 요청 바디:**
@@ -178,3 +178,12 @@ GET /api/ranking/volume?market=NX&price_min=10000&price_max=100000
 | `PARTIALLY_FILLED` | 부분 체결 | 잔여 수량 추가 주문 여부 판단 |
 | `CANCELLED` | 취소 완료 | 종목 재선정 가능 |
 | `FAILED` | KIS 주문 실패 | 오류 원인 확인 후 재시도 |
+
+## 주문 구분 (source 필드)
+
+| source | 의미 | 에이전트 행동 |
+|--------|------|-------------|
+| `AGENT` | 에이전트가 직접 제출한 주문 | 정상 추적 |
+| `MANUAL` | 사용자가 KIS 앱/웹에서 직접 거래한 내역 (자동 감지) | **매수/매도 의사결정 시 반드시 고려할 것** — 사용자가 이미 진입/청산한 포지션을 중복 주문하지 않도록 주의 |
+
+> **중요:** `GET /api/orders?sync=true` 응답에서 `source=MANUAL` 주문이 포함될 수 있습니다. 에이전트는 이 내역을 포지션 판단에 반영해야 합니다.

@@ -4,6 +4,50 @@
 
 ---
 
+## 2026-02-27 (2)
+
+### [Feature] 수동 거래 자동 임포트 + 주문내역 정렬 개선
+
+**Description:**
+KIS 동기화 시 에이전트가 생성하지 않은 주문(사용자가 KIS 앱/웹에서 직접 체결한 수동 거래)을 자동 감지하여 `orders` 테이블에 임포트합니다. 이로써 에이전트가 전체 거래 내역을 파악하여 오판을 방지할 수 있습니다.
+
+**동작 방식:**
+1. `GetOrderHistory()` 동기화 시 각 KIS 주문의 `odno`를 로컬 DB와 대조
+2. 로컬 DB에 없는 주문 → `source = 'MANUAL'`로 자동 INSERT
+3. 이미 있는 주문 → 기존 UPDATE 로직 그대로 (상태/체결가/종목명 갱신)
+4. 중복 삽입 방지: 동일 `odno`가 이미 존재하면 INSERT하지 않음
+
+**수동 거래 임포트 시 파싱 필드:**
+- `pdno` → `stock_code`, `prdt_name` → `stock_name`
+- `sll_buy_dvsn_cd` (01=SELL, 02=BUY) → `order_type`
+- `ord_unpr` → `price`, `avg_prvs` → `filled_price`
+- `ord_qty` → `qty`, `cncl_yn` + `tot_ccld_qty` → `status`
+- `ord_dt` + `ord_tmd` → `created_at` (KIS 실제 주문 시각)
+
+**정렬 개선:**
+- 기존: `ORDER BY id DESC` — 수동 거래가 늦게 임포트되어 순서 뒤틀림
+- 변경: `ORDER BY created_at DESC, id DESC` — 실제 주문 시각 기준 정렬
+
+**백그라운드 스케줄러 변경:**
+- 기존: PENDING/PARTIALLY_FILLED 주문이 없으면 KIS API 호출 생략
+- 변경: 항상 동기화 실행 (수동 거래 감지를 위해)
+
+**UI:**
+- 주문내역 테이블에 "구분" 열 추가
+  - `MANUAL` → 주황색 "수동" 배지
+  - `AGENT` → 회색 "에이전트" 배지
+
+**Files Touched:**
+- `backend/internal/database/db.go` — `source TEXT DEFAULT 'AGENT'` ALTER TABLE 마이그레이션 추가
+- `backend/internal/models/models.go` — `OrderSource` 타입, `AGENT`/`MANUAL` 상수, `Order.Source` 필드 추가
+- `backend/internal/agent/history.go` — 수동 거래 INSERT 로직, 정렬 수정, `source` 컬럼 SELECT/Scan 추가, 스케줄러 항상 실행
+- `frontend/src/pages/Orders.jsx` — "구분" 열 + 수동/에이전트 배지
+
+**Pending/Next Steps:**
+- KIS는 당일 주문만 반환하므로 이전 날의 수동 거래는 임포트되지 않음 (향후 날짜 범위 조회 확장 검토)
+
+---
+
 ## 2026-02-27
 
 ### [Feature] 기술적 지표 추가 — 거래대금, RSI(14), MACD(12,26,9)

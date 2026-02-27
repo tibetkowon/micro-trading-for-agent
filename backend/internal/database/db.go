@@ -96,6 +96,7 @@ func (db *DB) migrate() error {
 	alterStmts := []string{
 		`ALTER TABLE orders ADD COLUMN stock_name   TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE orders ADD COLUMN filled_price REAL NOT NULL DEFAULT 0`,
+		`ALTER TABLE orders ADD COLUMN source       TEXT NOT NULL DEFAULT 'AGENT'`,
 	}
 	for _, s := range alterStmts {
 		// "duplicate column name" 에러는 정상 (이미 존재하는 경우) — 무시

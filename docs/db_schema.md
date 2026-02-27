@@ -1,7 +1,7 @@
 # Database Schema
 
 > Engine: SQLite (WAL mode, foreign keys enabled)
-> Last updated: 2026-02-25 (rev 2)
+> Last updated: 2026-02-27 (rev 3)
 
 ---
 
@@ -37,7 +37,7 @@
 
 ## Table: `orders`
 
-**Purpose:** Full audit trail of every order placed by the AI agent or manual user request.
+**Purpose:** Full audit trail of every order — both AI agent orders and manually detected KIS trades.
 
 | Column | Type | Constraints | Description |
 |--------|------|-------------|-------------|
@@ -50,7 +50,10 @@
 | `filled_price` | REAL | NOT NULL, DEFAULT 0 | Average execution price (`avg_prvs` from KIS); populated after fill |
 | `status` | TEXT | NOT NULL, DEFAULT 'PENDING', CHECK IN ('PENDING','FILLED','PARTIALLY_FILLED','CANCELLED','FAILED') | Lifecycle status; `PARTIALLY_FILLED` when `tot_ccld_qty < ord_qty` |
 | `kis_order_id` | TEXT | NOT NULL, DEFAULT '' | KIS-assigned order number (`odno`); populated after submission |
-| `created_at` | DATETIME | NOT NULL, DEFAULT `datetime('now')` | Order creation timestamp |
+| `source` | TEXT | NOT NULL, DEFAULT 'AGENT' | Order origin: `AGENT` = placed by AI agent / `MANUAL` = detected from KIS sync (user's manual trade) |
+| `created_at` | DATETIME | NOT NULL, DEFAULT `datetime('now')` | Actual order time; for MANUAL orders this is set from KIS `ord_dt`+`ord_tmd` for correct chronological sorting |
+
+**정렬 기준:** `created_at DESC, id DESC` — MANUAL 주문은 KIS 실제 주문 시각으로 설정되므로 에이전트 주문과 시간 순으로 올바르게 정렬됨.
 
 ---
 

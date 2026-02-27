@@ -87,6 +87,7 @@ export default function Orders() {
                 <th className="pb-2 pr-4">수량</th>
                 <th className="pb-2 pr-4">주문가 / 체결가</th>
                 <th className="pb-2 pr-4">상태</th>
+                <th className="pb-2 pr-4">구분</th>
                 <th className="pb-2 pr-4">주문시각</th>
                 <th className="pb-2"></th>
               </tr>
@@ -95,6 +96,7 @@ export default function Orders() {
               {orders.map((o) => {
                 const isFilled = FILLED_STATUSES.has(o.status)
                 const isDeleting = deletingIds.has(o.id)
+                const isManual = o.source === 'MANUAL'
                 return (
                   <tr key={o.id} className="border-b border-gray-800/50 hover:bg-gray-900/50">
                     <td className="py-2 pr-4 text-gray-500">{o.id}</td>
@@ -118,6 +120,13 @@ export default function Orders() {
                       )}
                     </td>
                     <td className="py-2 pr-4"><StatusBadge status={o.status} /></td>
+                    <td className="py-2 pr-4">
+                      {isManual ? (
+                        <span className="text-xs px-1.5 py-0.5 rounded bg-orange-900/50 text-orange-300">수동</span>
+                      ) : (
+                        <span className="text-xs px-1.5 py-0.5 rounded bg-gray-800 text-gray-400">에이전트</span>
+                      )}
+                    </td>
                     <td className="py-2 pr-4 text-gray-400">{fmtDate(o.created_at)}</td>
                     <td className="py-2">
                       <button
