@@ -17,7 +17,7 @@ type StockInfo struct {
 	CurrentPrice string  `json:"current_price"`
 	ChangeRate   string  `json:"change_rate"`
 	Volume       string  `json:"volume"`
-	TradingValue float64 `json:"trading_value"`  // 거래대금 (volume × price, KRW); 0 = unavailable
+	TradingValue float64 `json:"trading_value"` // 거래대금 (volume × price, KRW); 0 = unavailable
 	MA5          float64 `json:"ma5"`
 	MA20         float64 `json:"ma20"`
 	RSI14        float64 `json:"rsi14"`          // RSI(14) from 5-minute closes; 0 = insufficient data
