@@ -17,6 +17,14 @@ const (
 	OrderTypeSell OrderType = "SELL"
 )
 
+// OrderSource distinguishes agent-placed orders from manually detected ones.
+type OrderSource string
+
+const (
+	OrderSourceAgent  OrderSource = "AGENT"
+	OrderSourceManual OrderSource = "MANUAL"
+)
+
 // OrderStatus tracks the lifecycle of an order.
 type OrderStatus string
 
@@ -39,6 +47,7 @@ type Order struct {
 	FilledPrice float64     `json:"filled_price"` // 체결가 (체결 후 avg_prvs 기준)
 	Status      OrderStatus `json:"status"`
 	KISOrderID  string      `json:"kis_order_id"`
+	Source      OrderSource `json:"source"` // AGENT: 에이전트 주문 / MANUAL: 수동 거래 감지
 	CreatedAt   time.Time   `json:"created_at"`
 }
 
