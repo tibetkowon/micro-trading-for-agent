@@ -14,8 +14,9 @@ import (
 
 // GetOrderHistory returns KIS execution history and syncs status, stock name, and filled price to the local DB.
 // For KIS orders not yet in the local DB (manually placed via KIS app/web), a new record is inserted with source=MANUAL.
-func GetOrderHistory(ctx context.Context, client *kis.Client, db *database.DB) ([]map[string]any, error) {
-	history, err := client.GetOrderHistory(ctx)
+// startDate/endDate format: "20060102".
+func GetOrderHistory(ctx context.Context, client *kis.Client, db *database.DB, startDate, endDate string) ([]map[string]any, error) {
+	history, err := client.GetOrderHistory(ctx, startDate, endDate)
 	if err != nil {
 		return nil, fmt.Errorf("GetOrderHistory: %w", err)
 	}
@@ -73,6 +74,11 @@ func GetOrderHistory(ctx context.Context, client *kis.Client, db *database.DB) (
 
 		// --- 신규 레코드: 수동 거래 감지 → INSERT ---
 		if stockCode == "" {
+			continue
+		}
+
+		// 취소 주문은 임포트하지 않음
+		if cancYn == "Y" {
 			continue
 		}
 
@@ -150,8 +156,9 @@ func StartOrderSyncScheduler(ctx context.Context, client *kis.Client, db *databa
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				// 미체결 주문이 없어도 수동 거래 감지를 위해 항상 동기화 실행
-				if _, err := GetOrderHistory(ctx, client, db); err != nil {
+				// 미체결 주문이 없어도 수동 거래 감지를 위해 항상 동기화 실행 (오늘 날짜만)
+				today := time.Now().Format("20060102")
+				if _, err := GetOrderHistory(ctx, client, db, today, today); err != nil {
 					logger.Warn("order sync failed", map[string]any{"error": err.Error()})
 				} else {
 					logger.Info("order sync completed", nil)

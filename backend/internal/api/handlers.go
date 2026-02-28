@@ -3,6 +3,7 @@ package api
 import (
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/micro-trading-for-agent/backend/internal/agent"
@@ -45,8 +46,14 @@ func (h *Handler) GetOrders(c *gin.Context) {
 	}
 
 	if c.Query("sync") == "true" {
+		days, _ := strconv.Atoi(c.DefaultQuery("days", "1"))
+		if days < 1 || days > 90 {
+			days = 1
+		}
+		endDate := time.Now().Format("20060102")
+		startDate := time.Now().AddDate(0, 0, -(days - 1)).Format("20060102")
 		// 오류가 있어도 DB 조회는 계속 진행
-		_, _ = agent.GetOrderHistory(c.Request.Context(), h.client, h.db)
+		_, _ = agent.GetOrderHistory(c.Request.Context(), h.client, h.db, startDate, endDate)
 	}
 
 	orders, err := agent.GetLocalOrderHistory(c.Request.Context(), h.db, limit, offset)

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/micro-trading-for-agent/backend/internal/database"
@@ -495,27 +496,45 @@ func (c *Client) CancelKISOrder(ctx context.Context, krxOrgNo, kisOrderID, ordDv
 	return &result.Output, nil
 }
 
-// GetOrderHistory fetches recent order history.
-func (c *Client) GetOrderHistory(ctx context.Context) ([]map[string]any, error) {
+// GetOrderHistory fetches order history for the given date range with pagination.
+// startDate/endDate format: "20060102". Uses TTTC0081R (3개월 이내).
+func (c *Client) GetOrderHistory(ctx context.Context, startDate, endDate string) ([]map[string]any, error) {
 	endpoint := "/uapi/domestic-stock/v1/trading/inquire-daily-ccld"
-	today := time.Now().Format("20060102")
-	params := fmt.Sprintf("?CANO=%s&ACNT_PRDT_CD=%s&INQR_STRT_DT=%s&INQR_END_DT=%s&SLL_BUY_DVSN_CD=00&INQR_DVSN=00&PDNO=&CCLD_DVSN=00&ORD_GNO_BRNO=&ODNO=&CANC_YN=N&CTX_AREA_FK100=&CTX_AREA_NK100=",
-		c.accountNo, c.accountType, today, today)
 
-	raw, err := c.get(ctx, endpoint, params, "TTTC8001R")
-	if err != nil {
-		return nil, err
+	var all []map[string]any
+	fk100, nk100 := "", ""
+
+	for {
+		params := fmt.Sprintf(
+			"?CANO=%s&ACNT_PRDT_CD=%s&INQR_STRT_DT=%s&INQR_END_DT=%s&SLL_BUY_DVSN_CD=00&INQR_DVSN=00&PDNO=&CCLD_DVSN=00&ORD_GNO_BRNO=&ODNO=&CANC_YN=&CTX_AREA_FK100=%s&CTX_AREA_NK100=%s",
+			c.accountNo, c.accountType, startDate, endDate, fk100, nk100)
+
+		raw, err := c.get(ctx, endpoint, params, "TTTC0081R")
+		if err != nil {
+			return nil, err
+		}
+
+		var result struct {
+			Output1      []map[string]any `json:"output1"`
+			MsgCode      string           `json:"msg_cd"`
+			CtxAreaFK100 string           `json:"ctx_area_fk100"`
+			CtxAreaNK100 string           `json:"ctx_area_nk100"`
+		}
+		if err := json.Unmarshal(raw, &result); err != nil {
+			c.logAPIError(endpoint, "PARSE_ERROR", string(raw))
+			return nil, fmt.Errorf("parse order history: %w", err)
+		}
+
+		all = append(all, result.Output1...)
+
+		fk100 = strings.TrimSpace(result.CtxAreaFK100)
+		nk100 = strings.TrimSpace(result.CtxAreaNK100)
+		if fk100 == "" && nk100 == "" {
+			break
+		}
 	}
 
-	var result struct {
-		Output  []map[string]any `json:"output1"`
-		MsgCode string           `json:"msg_cd"`
-	}
-	if err := json.Unmarshal(raw, &result); err != nil {
-		c.logAPIError(endpoint, "PARSE_ERROR", string(raw))
-		return nil, fmt.Errorf("parse order history: %w", err)
-	}
-	return result.Output, nil
+	return all, nil
 }
 
 // --- Internal helpers ---

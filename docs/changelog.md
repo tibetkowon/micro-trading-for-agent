@@ -4,6 +4,45 @@
 
 ---
 
+## 2026-02-28
+
+### [Feature] KIS 동기화 날짜 범위 확장 + 취소 주문 필터링
+
+**Description:**
+"KIS 동기화" 기능을 개선하여 이전 날짜 체결 내역 임포트 및 취소 주문 자동 제외가 가능해졌습니다.
+
+**변경 내용:**
+
+1. **날짜 범위 확장**: 기존 오늘 하루만 조회하던 방식에서 최대 90일(3개월) 범위로 확장
+   - TR_ID `TTTC8001R` → `TTTC0081R` (3개월 이내 표준 TR, 구버전 교체)
+   - `GetOrderHistory(ctx)` → `GetOrderHistory(ctx, startDate, endDate string)` 시그니처 변경
+
+2. **페이지네이션 추가**: `ctx_area_fk100` / `ctx_area_nk100` 기반 루프로 100건 초과 데이터도 전부 수집
+
+3. **취소 주문 skip**: 신규 MANUAL 삽입 시 `cncl_yn == "Y"` 이면 INSERT하지 않고 건너뜀
+   - 기존 AGENT 주문이 취소된 경우(DB에 이미 있는 경우)는 기존 상태 업데이트 유지
+
+4. **`days` 쿼리 파라미터 추가**: `GET /api/orders?sync=true&days=N` (기본값 1, 최대 90)
+   - `days=1` → 오늘만 (기존 동작 보존)
+   - `days=90` → startDate = today - 89일, endDate = today
+
+5. **프론트엔드 드롭다운**: KIS 동기화 버튼 옆 날짜 범위 선택 UI 추가
+   - 선택지: 오늘 / 7일 / 30일 / 90일
+
+6. **스케줄러 동작 보존**: `StartOrderSyncScheduler`는 today~today 범위로 호출 (현행 유지)
+
+**Files Touched:**
+- `backend/internal/kis/client.go` — `GetOrderHistory` 시그니처/페이지네이션/TR_ID 변경, `strings` 패키지 추가
+- `backend/internal/agent/history.go` — 시그니처 반영, 취소 주문 skip, 스케줄러 today 호출
+- `backend/internal/api/handlers.go` — `days` 파라미터 추가, `time` 패키지 추가
+- `frontend/src/pages/Orders.jsx` — `syncDays` state + 드롭다운 UI 추가
+
+**Pending/Next Steps:**
+- 실제 KIS 환경에서 90일 범위 조회 시 페이지네이션이 정상 동작하는지 확인
+- 3개월 이전 내역이 필요한 경우 `CTSC9215R` TR_ID 전환 로직 추가 검토
+
+---
+
 ## 2026-02-27 (2)
 
 ### [Feature] 수동 거래 자동 임포트 + 주문내역 정렬 개선
