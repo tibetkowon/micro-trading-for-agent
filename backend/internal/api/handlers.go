@@ -350,6 +350,35 @@ func (h *Handler) GetDisparityRank(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"ranking": items})
 }
 
+// GET /api/market/status — 현재 장운영 여부 조회
+// Response: { "is_open": bool, "checked_at": RFC3339, "reason": "open"|"weekend"|"outside_hours"|"holiday"|"check_failed" }
+func (h *Handler) GetMarketStatus(c *gin.Context) {
+	now := time.Now().In(agent.KSTLocation())
+	checkedAt := now.Format(time.RFC3339)
+
+	if wd := now.Weekday(); wd == time.Saturday || wd == time.Sunday {
+		c.JSON(http.StatusOK, gin.H{"is_open": false, "checked_at": checkedAt, "reason": "weekend"})
+		return
+	}
+
+	openMinute := now.Hour()*60 + now.Minute()
+	if openMinute < 9*60 || openMinute >= 15*60+30 {
+		c.JSON(http.StatusOK, gin.H{"is_open": false, "checked_at": checkedAt, "reason": "outside_hours"})
+		return
+	}
+
+	isOpen, err := agent.IsMarketOpen(c.Request.Context(), h.client)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"is_open": false, "checked_at": checkedAt, "reason": "check_failed"})
+		return
+	}
+	if !isOpen {
+		c.JSON(http.StatusOK, gin.H{"is_open": false, "checked_at": checkedAt, "reason": "holiday"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"is_open": true, "checked_at": checkedAt, "reason": "open"})
+}
+
 // GET /api/debug/balance — KIS 잔고 API 원본 응답 확인용 (필드명 디버깅)
 func (h *Handler) DebugRawBalance(c *gin.Context) {
 	raw, err := h.client.GetRawBalance(c.Request.Context())

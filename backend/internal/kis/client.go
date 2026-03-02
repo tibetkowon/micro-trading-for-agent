@@ -136,6 +136,12 @@ type DisparityRankItem struct {
 	D120         string `json:"d120_dsrt"`      // 120일 이격도
 }
 
+// HolidayInfo holds market open/close status for a given date (CTCA0903R).
+type HolidayInfo struct {
+	BassDate string `json:"bass_dt"` // YYYYMMDD
+	IsBizDay string `json:"bzdy_yn"` // Y=영업일, N=휴장
+}
+
 // OrderRequest is the payload for placing a buy/sell order.
 type OrderRequest struct {
 	StockCode string `json:"pdno"`     // 종목코드
@@ -401,6 +407,30 @@ func (c *Client) GetDisparityRank(ctx context.Context, market, period, sort, pri
 		return []DisparityRankItem{}, nil
 	}
 	return result.Output, nil
+}
+
+// GetMarketHolidayInfo checks whether the given date is a business day (CTCA0903R).
+// date format: "20060102". Returns the first output entry for the requested date.
+func (c *Client) GetMarketHolidayInfo(ctx context.Context, date string) (*HolidayInfo, error) {
+	endpoint := "/uapi/domestic-stock/v1/quotations/chk-holiday"
+	params := fmt.Sprintf("?BASS_DT=%s&CTX_AREA_NK=&CTX_AREA_FK=", date)
+
+	raw, err := c.get(ctx, endpoint, params, "CTCA0903R")
+	if err != nil {
+		return nil, err
+	}
+
+	var result struct {
+		Output []HolidayInfo `json:"output"`
+		RtCd   string        `json:"rt_cd"`
+	}
+	if err := json.Unmarshal(raw, &result); err != nil {
+		return nil, fmt.Errorf("parse holiday info: %w", err)
+	}
+	if len(result.Output) == 0 {
+		return nil, fmt.Errorf("holiday info: empty output for %s", date)
+	}
+	return &result.Output[0], nil
 }
 
 // GetCancellableOrders fetches orders that can still be cancelled or amended (TTTC0084R).

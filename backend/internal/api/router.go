@@ -31,6 +31,11 @@ func SetupRouter(h *Handler, frontendDist string) *gin.Engine {
 		api.GET("/settings", h.GetSettings)
 		api.GET("/debug/balance", h.DebugRawBalance)
 
+		market := api.Group("/market")
+		{
+			market.GET("/status", h.GetMarketStatus)
+		}
+
 		ranking := api.Group("/ranking")
 		{
 			ranking.GET("/volume", h.GetVolumeRank)

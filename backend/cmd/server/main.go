@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	_ "time/tzdata" // NCP Micro 이미지에 tzdata 없을 경우 Asia/Seoul 로드 실패 방지
 	"time"
 
 	"github.com/micro-trading-for-agent/backend/internal/agent"

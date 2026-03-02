@@ -21,6 +21,17 @@ cp .env.example .env
 # .env 파일에 KIS API 키와 계좌 정보를 입력하세요
 ```
 
+`.env` 필수 항목:
+
+| 키 | 설명 |
+|----|------|
+| `KIS_APP_KEY` | KIS Open API 앱 키 |
+| `KIS_APP_SECRET` | KIS Open API 시크릿 |
+| `KIS_ACCOUNT_NO` | 계좌번호 (숫자만) |
+| `KIS_ACCOUNT_TYPE` | 계좌 종류 (`01` = 종합, `22` = 선물옵션) |
+| `KIS_BASE_URL` | 실전: `https://openapi.koreainvestment.com:9443` |
+| `KIS_IS_MOCK` | `true` = 모의투자, `false` = 실전투자 |
+
 ### 2. 백엔드 실행
 
 ```bash
@@ -41,19 +52,66 @@ npm run dev
 
 ## API Endpoints
 
+### 계좌 / 잔고
+
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/api/balance` | 계좌 잔고 조회 |
 | GET | `/api/positions` | 실시간 보유 종목 조회 |
-| GET | `/api/orders` | 주문 내역 조회 (`?sync=true` 로 KIS 체결 동기화) |
-| POST | `/api/orders` | 수동 주문 (테스트용) |
-| DELETE | `/api/orders/:id` | 주문 단건 삭제 |
-| GET | `/api/logs/kis` | KIS API 에러 로그 (`?summary=true` 로 raw 제외) |
-| DELETE | `/api/logs/kis/:id` | 에러 로그 단건 삭제 |
+
+### 종목 / 차트
+
+| Method | Path | Description |
+|--------|------|-------------|
 | GET | `/api/stock/:code` | 종목 현재가 + MA5/MA20 |
 | GET | `/api/stock/:code/chart` | 캔들 차트 (`?interval=1m\|5m\|1h`) |
+
+### 주문
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/orders` | 주문 내역 조회 (`?sync=true` KIS 체결 동기화, `?days=N` 범위) |
+| POST | `/api/orders` | 수동 주문 (테스트용) |
+| POST | `/api/orders/:id/cancel` | KIS 미체결 주문 취소 |
+| DELETE | `/api/orders/:id` | 주문 단건 삭제 |
+| GET | `/api/orders/feasibility?code=` | 주문가능수량 / 주문가능금액 조회 |
+
+### 장운영 상태
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/market/status` | 장운영 여부 조회 (KIS 영업일 기준, 당일 캐시) |
+
+응답 예시:
+```json
+{ "is_open": false, "checked_at": "2026-03-02T10:00:00+09:00", "reason": "holiday" }
+```
+`reason` 값: `open` / `weekend` / `outside_hours` / `holiday` / `check_failed`
+
+### 순위
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/ranking/volume` | 거래량 순위 (`?sort=0~3`, `?price_min`, `?price_max`) |
+| GET | `/api/ranking/strength` | 체결강도 순위 |
+| GET | `/api/ranking/exec-count` | 대량체결건수 순위 |
+| GET | `/api/ranking/disparity` | 이격도 순위 (`?period=5\|10\|20\|60\|120`) |
+
+### 로그 / 설정
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/logs/kis` | KIS API 에러 로그 (`?summary=true` raw 제외) |
+| DELETE | `/api/logs/kis/:id` | 에러 로그 단건 삭제 |
 | GET | `/api/settings` | 설정 조회 (민감 정보 마스킹) |
 | GET | `/health` | 헬스 체크 |
+
+## 스케줄러 동작
+
+| 스케줄러 | 주기 | 조건 |
+|----------|------|------|
+| Order Sync (`StartOrderSyncScheduler`) | 3분 | **장 중에만** 실행 (주말·공휴일·장 외 시간 자동 skip) |
+| Token Auto Refresh | 20시간 | 항상 (KIS 토큰 만료 24시간 기준 선제 갱신) |
 
 ## Project Structure
 

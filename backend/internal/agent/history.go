@@ -156,6 +156,16 @@ func StartOrderSyncScheduler(ctx context.Context, client *kis.Client, db *databa
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
+				// 장운영일 체크 — 장 마감/공휴일이면 KIS API 호출 skip
+				open, err := IsMarketOpen(ctx, client)
+				if err != nil {
+					logger.Warn("market status check failed — skipping sync", map[string]any{"error": err.Error()})
+					continue
+				}
+				if !open {
+					logger.Info("market closed — skipping order sync", nil)
+					continue
+				}
 				// 미체결 주문이 없어도 수동 거래 감지를 위해 항상 동기화 실행 (오늘 날짜만)
 				today := time.Now().Format("20060102")
 				if _, err := GetOrderHistory(ctx, client, db, today, today); err != nil {

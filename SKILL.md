@@ -21,7 +21,8 @@ when: 사용자가 "주식 사줘", "잔고 어때?", "종목 추천해줘" 등 
 - API Rate Limit: 15 TPS (백엔드 자동 관리)
 - Token Management: 20시간 자동 갱신
 - Order types: `price=0` (시장가), `price>0` (지정가)
-- Order sync: 백엔드 스케줄러가 3분마다 KIS 체결 상태 자동 갱신 + **수동 거래 자동 임포트** (사용자가 KIS 앱에서 직접 거래한 내역 포함)
+- Order sync: 백엔드 스케줄러가 3분마다 KIS 체결 상태 자동 갱신 + **수동 거래 자동 임포트** (사용자가 KIS 앱에서 직접 거래한 내역 포함). **단, 주말·공휴일·장 외 시간에는 자동 skip.**
+- 장운영일 체크: 에이전트 행동 전 `GET /api/market/status`로 장 상태를 먼저 확인할 것. `is_open: false`이면 주문/조회 등 모든 거래 행동 금지.
 
 ---
 
@@ -29,20 +30,23 @@ when: 사용자가 "주식 사줘", "잔고 어때?", "종목 추천해줘" 등 
 
 ### 매수 진입 흐름
 
-1. **종목 후보 선정** — 순위 API(`/ranking/volume`, `/ranking/strength`, `/ranking/exec-count`, `/ranking/disparity`)로 유망 종목 리스트 확보. ETF·ETN·우선주·위험종목은 자동 제외됨.
-2. **중복 매수 방지** — `GET /api/positions`로 현재 보유 종목 확인. 이미 보유 중이면 패스.
-3. **예산 확인** — `GET /api/balance`로 출금가능금액(예수금) 조회. 예산 부족 시 종목 재선정.
-4. **기술적 분석** — `GET /api/stock/{code}`로 아래 지표 확인:
+1. **장운영 확인 (필수 첫 단계)** — `GET /api/market/status`
+   - `is_open: true` → 진행
+   - `is_open: false` → **즉시 중단** (reason: `weekend`/`outside_hours`/`holiday`/`check_failed`)
+2. **종목 후보 선정** — 순위 API(`/ranking/volume`, `/ranking/strength`, `/ranking/exec-count`, `/ranking/disparity`)로 유망 종목 리스트 확보. ETF·ETN·우선주·위험종목은 자동 제외됨.
+3. **중복 매수 방지** — `GET /api/positions`로 현재 보유 종목 확인. 이미 보유 중이면 패스.
+4. **예산 확인** — `GET /api/balance`로 출금가능금액(예수금) 조회. 예산 부족 시 종목 재선정.
+5. **기술적 분석** — `GET /api/stock/{code}`로 아래 지표 확인:
    - `trading_value` (거래대금): 높을수록 실질 자금 유입 큰 종목 → **우선 순위 부여**
    - `ma5` vs `ma20`: ma5 > ma20이면 단기 상승 추세
    - `rsi14`: **< 30** 과매도(반등 기대), **> 70** 과매수(진입 자제)
    - `macd_histogram`: **> 0 & 상승 전환** = 강세 신호, **< 0 & 하락** = 약세 신호
    - 값이 `0`이면 데이터 부족 → 해당 지표 판단 보류 (장 시작 직후 등)
-5. **주문가능수량 확인** — `GET /api/orders/feasibility?code={code}`
+6. **주문가능수량 확인** — `GET /api/orders/feasibility?code={code}`
    - `orderable_qty > 0`: 주문 가능
    - `orderable_qty == 0`: 해당 종목 포기, `available_cash` 기준으로 종목 재선정
-6. **주문 제출** — `POST /api/orders` (매수)
-7. **체결 확인** — `GET /api/orders?sync=true`
+7. **주문 제출** — `POST /api/orders` (매수)
+8. **체결 확인** — `GET /api/orders?sync=true`
    - `FILLED`: 완전 체결 → 완료
    - `PARTIALLY_FILLED`: 잔여 수량 추가 주문 여부 판단
    - `PENDING`: 미체결 지속 시 취소 검토
@@ -61,6 +65,27 @@ when: 사용자가 "주식 사줘", "잔고 어때?", "종목 추천해줘" 등 
 ---
 
 ## Core API Endpoints
+
+### 장운영 상태 (모든 거래 행동 전 필수 확인)
+
+| Endpoint | 설명 |
+|----------|------|
+| `GET /api/market/status` | 장운영 여부 조회. `is_open: false`이면 거래 행동 금지. |
+
+**응답 예시:**
+```json
+{ "is_open": false, "checked_at": "2026-03-02T09:30:00+09:00", "reason": "holiday" }
+```
+
+| reason | 의미 | 에이전트 행동 |
+|--------|------|-------------|
+| `open` | 장 운영 중 | 거래 진행 가능 |
+| `weekend` | 주말 | 모든 거래 중단 |
+| `outside_hours` | 장 외 시간 (09:00 전 또는 15:30 후) | 모든 거래 중단 |
+| `holiday` | 공휴일/임시 휴장 | 모든 거래 중단 |
+| `check_failed` | KIS 영업일 조회 실패 | 모든 거래 중단 (fail-safe) |
+
+---
 
 ### 계좌 & 잔고
 
