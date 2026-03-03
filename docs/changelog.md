@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-03-03 — KIS inquire-daily-ccld API 파라미터 버그 수정
+
+- **kis/client.go**: `GetOrderHistory()` 쿼리에 누락된 필수 파라미터 3개 추가 (`INQR_DVSN_1`, `INQR_DVSN_3`, `EXCG_ID_DVSN_CD=ALL`)
+- **kis/client.go**: 스펙에 없는 `CANC_YN` 파라미터 제거 — API 게이트웨이가 HTML 오류 반환하던 원인
+- **kis/client.go**: `get()` 헬퍼에 `Content-Type: application/json; charset=utf-8` 헤더 추가 (GET 요청에도 명세 required)
+- **영향**: 체결 완료 거래가 대기(PENDING) 상태로 표시되던 현상 해결
+
 ## 2026-03-02 — 장운영일 체크 + Order Sync 스케줄러 최적화
 
 - **KIS client**: `HolidayInfo` DTO 및 `GetMarketHolidayInfo()` 메서드 추가 (`CTCA0903R`)

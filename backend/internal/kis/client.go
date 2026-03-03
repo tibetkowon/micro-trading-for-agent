@@ -536,7 +536,7 @@ func (c *Client) GetOrderHistory(ctx context.Context, startDate, endDate string)
 
 	for {
 		params := fmt.Sprintf(
-			"?CANO=%s&ACNT_PRDT_CD=%s&INQR_STRT_DT=%s&INQR_END_DT=%s&SLL_BUY_DVSN_CD=00&INQR_DVSN=00&PDNO=&CCLD_DVSN=00&ORD_GNO_BRNO=&ODNO=&CANC_YN=&CTX_AREA_FK100=%s&CTX_AREA_NK100=%s",
+			"?CANO=%s&ACNT_PRDT_CD=%s&INQR_STRT_DT=%s&INQR_END_DT=%s&SLL_BUY_DVSN_CD=00&INQR_DVSN=00&INQR_DVSN_1=&INQR_DVSN_3=00&PDNO=&CCLD_DVSN=00&ORD_GNO_BRNO=&ODNO=&EXCG_ID_DVSN_CD=ALL&CTX_AREA_FK100=%s&CTX_AREA_NK100=%s",
 			c.accountNo, c.accountType, startDate, endDate, fk100, nk100)
 
 		raw, err := c.get(ctx, endpoint, params, "TTTC0081R")
@@ -584,6 +584,7 @@ func (c *Client) get(ctx context.Context, endpoint, queryParams, trID string) ([
 		return nil, err
 	}
 	c.setHeaders(req, tok.AccessToken, trID)
+	req.Header.Set("Content-Type", "application/json; charset=utf-8")
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
