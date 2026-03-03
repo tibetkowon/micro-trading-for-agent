@@ -186,12 +186,16 @@ func (h *Handler) GetPositions(c *gin.Context) {
 
 // GET /api/logs/kis?limit=N&summary=true
 // summary=true 이면 raw_response 필드를 제외한 요약 형태로 반환
+// 호출 시 2일 이상 된 로그는 자동 삭제됨
 func (h *Handler) GetKISLogs(c *gin.Context) {
 	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "100"))
 	if limit <= 0 || limit > 500 {
 		limit = 100
 	}
 	summary := c.Query("summary") == "true"
+
+	h.db.ExecContext(c.Request.Context(),
+		`DELETE FROM kis_api_logs WHERE timestamp < datetime('now', '-2 days')`)
 
 	rows, err := h.db.QueryContext(c.Request.Context(),
 		`SELECT id, endpoint, error_code, error_message, raw_response, timestamp
