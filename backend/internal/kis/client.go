@@ -23,7 +23,6 @@ type Client struct {
 	appSecret    string
 	accountNo    string
 	accountType  string
-	isMock       bool
 	tokenManager *TokenManager
 	rateLimiter  *RateLimiter
 	db           *database.DB
@@ -34,7 +33,6 @@ type Client struct {
 func NewClient(
 	baseURL string,
 	appKey, appSecret, accountNo, accountType string,
-	isMock bool,
 	tokenManager *TokenManager,
 	db *database.DB,
 ) *Client {
@@ -44,22 +42,12 @@ func NewClient(
 		appSecret:    appSecret,
 		accountNo:    accountNo,
 		accountType:  accountType,
-		isMock:       isMock,
 		tokenManager: tokenManager,
 		// KIS allows up to 20 TPS; use 15 to stay safely under the limit.
 		rateLimiter: NewRateLimiter(15, 15),
 		db:          db,
 		httpClient:  &http.Client{Timeout: 10 * time.Second},
 	}
-}
-
-// trID returns the correct KIS TR_ID based on account type (real vs mock).
-// Real account uses TTTC/CTSC prefix; mock account uses VTTC/VTSC prefix.
-func (c *Client) trID(real, mock string) string {
-	if c.isMock {
-		return mock
-	}
-	return real
 }
 
 // --- Request/Response DTOs ---
@@ -215,7 +203,7 @@ func (c *Client) GetAvailableOrder(ctx context.Context, stockCode string) (*Avai
 	params := fmt.Sprintf("?CANO=%s&ACNT_PRDT_CD=%s&PDNO=%s&ORD_UNPR=0&ORD_DVSN=01&CMA_EVLU_AMT_ICLD_YN=N&OVRS_ICLD_YN=N",
 		c.accountNo, c.accountType, stockCode)
 
-	raw, err := c.get(ctx, endpoint, params, c.trID("TTTC8908R", "VTTC8908R"))
+	raw, err := c.get(ctx, endpoint, params, "TTTC8908R")
 	if err != nil {
 		return nil, err
 	}
@@ -239,7 +227,7 @@ func (c *Client) GetInquireBalance(ctx context.Context) (*InquireBalanceOutput2,
 	params := fmt.Sprintf("?CANO=%s&ACNT_PRDT_CD=%s&AFHR_FLPR_YN=N&OFL_YN=&INQR_DVSN=01&UNPR_DVSN=01&FUND_STTL_ICLD_YN=N&FNCG_AMT_AUTO_RDPT_YN=N&PRCS_DVSN=00&CTX_AREA_FK100=&CTX_AREA_NK100=",
 		c.accountNo, c.accountType)
 
-	raw, err := c.get(ctx, endpoint, params, c.trID("TTTC8434R", "VTTC8434R"))
+	raw, err := c.get(ctx, endpoint, params, "TTTC8434R")
 	if err != nil {
 		return nil, err
 	}
@@ -261,15 +249,15 @@ func (c *Client) GetInquireBalance(ctx context.Context) (*InquireBalanceOutput2,
 }
 
 // PlaceBuyOrder places a buy order.
-// TR-ID TTTC0012U (real) / VTTC0012U (mock): 국내주식주문 매수
+// TR-ID TTTC0012U: 국내주식주문 매수 (신규 TR, 구 TTTC0802U 대체)
 func (c *Client) PlaceBuyOrder(ctx context.Context, req OrderRequest) (*OrderResponse, error) {
-	return c.placeOrder(ctx, req, c.trID("TTTC0012U", "VTTC0012U"), "/uapi/domestic-stock/v1/trading/order-cash")
+	return c.placeOrder(ctx, req, "TTTC0012U", "/uapi/domestic-stock/v1/trading/order-cash")
 }
 
 // PlaceSellOrder places a sell order.
-// TR-ID TTTC0011U (real) / VTTC0011U (mock): 국내주식주문 매도
+// TR-ID TTTC0011U: 국내주식주문 매도 (신규 TR, 구 TTTC0801U 대체)
 func (c *Client) PlaceSellOrder(ctx context.Context, req OrderRequest) (*OrderResponse, error) {
-	return c.placeOrder(ctx, req, c.trID("TTTC0011U", "VTTC0011U"), "/uapi/domestic-stock/v1/trading/order-cash")
+	return c.placeOrder(ctx, req, "TTTC0011U", "/uapi/domestic-stock/v1/trading/order-cash")
 }
 
 // GetHoldings fetches currently held stock positions from inquire-balance output1 (보유 종목 조회).
@@ -278,7 +266,7 @@ func (c *Client) GetHoldings(ctx context.Context) ([]HoldingItem, error) {
 	params := fmt.Sprintf("?CANO=%s&ACNT_PRDT_CD=%s&AFHR_FLPR_YN=N&OFL_YN=&INQR_DVSN=01&UNPR_DVSN=01&FUND_STTL_ICLD_YN=N&FNCG_AMT_AUTO_RDPT_YN=N&PRCS_DVSN=00&CTX_AREA_FK100=&CTX_AREA_NK100=",
 		c.accountNo, c.accountType)
 
-	raw, err := c.get(ctx, endpoint, params, c.trID("TTTC8434R", "VTTC8434R"))
+	raw, err := c.get(ctx, endpoint, params, "TTTC8434R")
 	if err != nil {
 		return nil, err
 	}
@@ -303,7 +291,7 @@ func (c *Client) GetRawBalance(ctx context.Context) ([]byte, error) {
 	endpoint := "/uapi/domestic-stock/v1/trading/inquire-balance"
 	params := fmt.Sprintf("?CANO=%s&ACNT_PRDT_CD=%s&AFHR_FLPR_YN=N&OFL_YN=&INQR_DVSN=01&UNPR_DVSN=01&FUND_STTL_ICLD_YN=N&FNCG_AMT_AUTO_RDPT_YN=N&PRCS_DVSN=00&CTX_AREA_FK100=&CTX_AREA_NK100=",
 		c.accountNo, c.accountType)
-	return c.get(ctx, endpoint, params, c.trID("TTTC8434R", "VTTC8434R"))
+	return c.get(ctx, endpoint, params, "TTTC8434R")
 }
 
 // GetVolumeRank fetches the volume ranking (거래량 순위 FHPST01710000). Max 30 results.
@@ -453,7 +441,7 @@ func (c *Client) GetCancellableOrders(ctx context.Context) ([]CancellableOrderIt
 	params := fmt.Sprintf("?CANO=%s&ACNT_PRDT_CD=%s&CTX_AREA_FK100=&CTX_AREA_NK100=&INQR_DVSN_1=0&INQR_DVSN_2=0",
 		c.accountNo, c.accountType)
 
-	raw, err := c.get(ctx, endpoint, params, c.trID("TTTC0084R", "VTTC0084R"))
+	raw, err := c.get(ctx, endpoint, params, "TTTC0084R")
 	if err != nil {
 		return nil, err
 	}
@@ -505,7 +493,7 @@ func (c *Client) CancelKISOrder(ctx context.Context, krxOrgNo, kisOrderID, ordDv
 	if err != nil {
 		return nil, err
 	}
-	c.setHeaders(httpReq, tok.AccessToken, c.trID("TTTC0013U", "VTTC0013U"))
+	c.setHeaders(httpReq, tok.AccessToken, "TTTC0013U")
 	httpReq.Header.Set("Content-Type", "application/json; charset=utf-8")
 
 	resp, err := c.httpClient.Do(httpReq)
@@ -566,7 +554,7 @@ func (c *Client) GetOrderHistory(ctx context.Context, startDate, endDate string)
 		q.Set("CTX_AREA_NK100", nk100)
 		params := "?" + q.Encode()
 
-		raw, err := c.get(ctx, endpoint, params, c.trID("TTTC0081R", "VTTC0081R"))
+		raw, err := c.get(ctx, endpoint, params, "TTTC0081R")
 		if err != nil {
 			return nil, err
 		}
