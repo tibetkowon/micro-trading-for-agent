@@ -45,6 +45,7 @@ func (h *Handler) GetOrders(c *gin.Context) {
 		limit = 50
 	}
 
+	var syncError string
 	if c.Query("sync") == "true" {
 		days, _ := strconv.Atoi(c.DefaultQuery("days", "1"))
 		if days < 1 || days > 90 {
@@ -52,8 +53,9 @@ func (h *Handler) GetOrders(c *gin.Context) {
 		}
 		endDate := time.Now().Format("20060102")
 		startDate := time.Now().AddDate(0, 0, -(days - 1)).Format("20060102")
-		// 오류가 있어도 DB 조회는 계속 진행
-		_, _ = agent.GetOrderHistory(c.Request.Context(), h.client, h.db, startDate, endDate)
+		if _, err := agent.GetOrderHistory(c.Request.Context(), h.client, h.db, startDate, endDate); err != nil {
+			syncError = err.Error()
+		}
 	}
 
 	orders, err := agent.GetLocalOrderHistory(c.Request.Context(), h.db, limit, offset)
@@ -64,7 +66,11 @@ func (h *Handler) GetOrders(c *gin.Context) {
 	if orders == nil {
 		orders = []models.Order{}
 	}
-	c.JSON(http.StatusOK, gin.H{"orders": orders, "limit": limit, "offset": offset})
+	resp := gin.H{"orders": orders, "limit": limit, "offset": offset}
+	if syncError != "" {
+		resp["sync_error"] = syncError
+	}
+	c.JSON(http.StatusOK, resp)
 }
 
 // POST /api/orders/:id/cancel — KIS 미체결 주문 취소 (TTTC0084R 확인 후 TTTC0013U 취소 요청)

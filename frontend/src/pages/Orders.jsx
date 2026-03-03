@@ -19,13 +19,23 @@ export default function Orders() {
   const [deletingIds, setDeletingIds] = useState(new Set())
   const [syncing, setSyncing] = useState(false)
   const [syncDays, setSyncDays] = useState(1)
+  const [syncMsg, setSyncMsg] = useState(null) // { ok: bool, text: string }
 
   const orders = data?.orders || []
 
   async function handleSync() {
     setSyncing(true)
+    setSyncMsg(null)
     try {
-      await fetch(`/api/orders?sync=true&days=${syncDays}&limit=1`)
+      const res = await fetch(`/api/orders?sync=true&days=${syncDays}&limit=1`)
+      const body = await res.json()
+      if (body.sync_error) {
+        setSyncMsg({ ok: false, text: body.sync_error })
+      } else {
+        setSyncMsg({ ok: true, text: '동기화 완료' })
+      }
+    } catch (e) {
+      setSyncMsg({ ok: false, text: e.message })
     } finally {
       setSyncing(false)
       refetch()
@@ -77,6 +87,12 @@ export default function Orders() {
           </button>
         </div>
       </div>
+
+      {syncMsg && (
+        <div className={`rounded p-3 mb-4 text-sm ${syncMsg.ok ? 'bg-green-900/30 border border-green-700 text-green-300' : 'bg-red-900/30 border border-red-700 text-red-300'}`}>
+          {syncMsg.text}
+        </div>
+      )}
 
       {error && (
         <div className="bg-red-900/30 border border-red-700 text-red-300 rounded p-4 mb-4 text-sm">
