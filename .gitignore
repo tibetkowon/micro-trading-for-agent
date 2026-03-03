@@ -33,3 +33,6 @@ Thumbs.db
 *.swp
 *.swo
 
+# Claude
+SKILL.md
+
