@@ -8,7 +8,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"strings"
 	"time"
 
 	"github.com/micro-trading-for-agent/backend/internal/database"
@@ -43,8 +42,8 @@ func NewClient(
 		accountNo:    accountNo,
 		accountType:  accountType,
 		tokenManager: tokenManager,
-		// KIS allows up to 20 TPS; use 15 to stay safely under the limit.
-		rateLimiter: NewRateLimiter(15, 15),
+		// KIS allows up to 20 TPS; burst=1 enforces strict per-request spacing.
+		rateLimiter: NewRateLimiter(10, 1),
 		db:          db,
 		httpClient:  &http.Client{Timeout: 10 * time.Second},
 	}
@@ -527,59 +526,43 @@ func (c *Client) CancelKISOrder(ctx context.Context, krxOrgNo, kisOrderID, ordDv
 	return &result.Output, nil
 }
 
-// GetOrderHistory fetches order history for the given date range with pagination.
+// GetOrderHistory fetches a single page of order history for the given date range.
 // startDate/endDate format: "20060102". Uses TTTC0081R (real) / VTTC0081R (mock).
+// Daily queries return at most ~100 records; pagination is not needed.
 func (c *Client) GetOrderHistory(ctx context.Context, startDate, endDate string) ([]map[string]any, error) {
 	endpoint := "/uapi/domestic-stock/v1/trading/inquire-daily-ccld"
 
-	var all []map[string]any
-	fk100, nk100 := "", ""
+	q := url.Values{}
+	q.Set("CANO", c.accountNo)
+	q.Set("ACNT_PRDT_CD", c.accountType)
+	q.Set("INQR_STRT_DT", startDate)
+	q.Set("INQR_END_DT", endDate)
+	q.Set("SLL_BUY_DVSN_CD", "00")
+	q.Set("INQR_DVSN", "00")
+	q.Set("INQR_DVSN_1", "")
+	q.Set("INQR_DVSN_3", "00")
+	q.Set("PDNO", "")
+	q.Set("CCLD_DVSN", "00")
+	q.Set("ORD_GNO_BRNO", "")
+	q.Set("ODNO", "")
+	q.Set("EXCG_ID_DVSN_CD", "ALL")
+	q.Set("CTX_AREA_FK100", "")
+	q.Set("CTX_AREA_NK100", "")
 
-	for {
-		q := url.Values{}
-		q.Set("CANO", c.accountNo)
-		q.Set("ACNT_PRDT_CD", c.accountType)
-		q.Set("INQR_STRT_DT", startDate)
-		q.Set("INQR_END_DT", endDate)
-		q.Set("SLL_BUY_DVSN_CD", "00")
-		q.Set("INQR_DVSN", "00")
-		q.Set("INQR_DVSN_1", "")
-		q.Set("INQR_DVSN_3", "00")
-		q.Set("PDNO", "")
-		q.Set("CCLD_DVSN", "00")
-		q.Set("ORD_GNO_BRNO", "")
-		q.Set("ODNO", "")
-		q.Set("EXCG_ID_DVSN_CD", "ALL")
-		q.Set("CTX_AREA_FK100", fk100)
-		q.Set("CTX_AREA_NK100", nk100)
-		params := "?" + q.Encode()
-
-		raw, err := c.get(ctx, endpoint, params, "TTTC0081R")
-		if err != nil {
-			return nil, err
-		}
-
-		var result struct {
-			Output1      []map[string]any `json:"output1"`
-			MsgCode      string           `json:"msg_cd"`
-			CtxAreaFK100 string           `json:"ctx_area_fk100"`
-			CtxAreaNK100 string           `json:"ctx_area_nk100"`
-		}
-		if err := json.Unmarshal(raw, &result); err != nil {
-			c.logAPIError(endpoint, "PARSE_ERROR", string(raw))
-			return nil, fmt.Errorf("parse order history: %w", err)
-		}
-
-		all = append(all, result.Output1...)
-
-		fk100 = strings.TrimSpace(result.CtxAreaFK100)
-		nk100 = strings.TrimSpace(result.CtxAreaNK100)
-		if fk100 == "" && nk100 == "" {
-			break
-		}
+	raw, err := c.get(ctx, endpoint, "?"+q.Encode(), "TTTC0081R")
+	if err != nil {
+		return nil, err
 	}
 
-	return all, nil
+	var result struct {
+		Output1 []map[string]any `json:"output1"`
+	}
+	if err := json.Unmarshal(raw, &result); err != nil {
+		c.logAPIError(endpoint, "PARSE_ERROR", string(raw))
+		return nil, fmt.Errorf("parse order history: %w", err)
+	}
+
+	return result.Output1, nil
 }
 
 // --- Internal helpers ---
