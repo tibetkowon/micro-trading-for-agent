@@ -43,8 +43,8 @@ func NewClient(
 		accountNo:    accountNo,
 		accountType:  accountType,
 		tokenManager: tokenManager,
-		// KIS allows up to 20 TPS; use 15 to stay safely under the limit.
-		rateLimiter: NewRateLimiter(15, 15),
+		// KIS allows up to 20 TPS; burst=1 enforces strict per-request spacing.
+		rateLimiter: NewRateLimiter(10, 1),
 		db:          db,
 		httpClient:  &http.Client{Timeout: 10 * time.Second},
 	}
@@ -532,10 +532,11 @@ func (c *Client) CancelKISOrder(ctx context.Context, krxOrgNo, kisOrderID, ordDv
 func (c *Client) GetOrderHistory(ctx context.Context, startDate, endDate string) ([]map[string]any, error) {
 	endpoint := "/uapi/domestic-stock/v1/trading/inquire-daily-ccld"
 
+	const maxPages = 20
 	var all []map[string]any
 	fk100, nk100 := "", ""
 
-	for {
+	for page := 0; page < maxPages; page++ {
 		q := url.Values{}
 		q.Set("CANO", c.accountNo)
 		q.Set("ACNT_PRDT_CD", c.accountType)

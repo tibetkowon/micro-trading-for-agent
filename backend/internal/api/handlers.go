@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"net/http"
 	"strconv"
 	"time"
@@ -53,7 +54,9 @@ func (h *Handler) GetOrders(c *gin.Context) {
 		}
 		endDate := time.Now().Format("20060102")
 		startDate := time.Now().AddDate(0, 0, -(days - 1)).Format("20060102")
-		if _, err := agent.GetOrderHistory(c.Request.Context(), h.client, h.db, startDate, endDate); err != nil {
+		syncCtx, cancel := context.WithTimeout(c.Request.Context(), 30*time.Second)
+		defer cancel()
+		if _, err := agent.GetOrderHistory(syncCtx, h.client, h.db, startDate, endDate); err != nil {
 			syncError = err.Error()
 		}
 	}
