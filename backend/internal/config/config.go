@@ -13,6 +13,7 @@ type Config struct {
 	KISAccountNo   string
 	KISAccountType string
 	KISBaseURL     string
+	KISIsMock      bool
 
 	DatabasePath string
 	ServerPort   string
@@ -31,6 +32,7 @@ func Load() (*Config, error) {
 		KISAccountNo:   mustEnv("KIS_ACCOUNT_NO"),
 		KISAccountType: getEnv("KIS_ACCOUNT_TYPE", "01"),
 		KISBaseURL:     getEnv("KIS_BASE_URL", "https://openapi.koreainvestment.com:9443"),
+		KISIsMock:      getEnv("KIS_IS_MOCK", "false") == "true",
 		DatabasePath:   getEnv("DATABASE_PATH", "./data/trading.db"),
 		ServerPort:     getEnv("SERVER_PORT", "8080"),
 		FrontendDist:   getEnv("FRONTEND_DIST_PATH", "./frontend/dist"),

@@ -60,6 +60,7 @@ func main() {
 		cfg.KISAppSecret,
 		cfg.KISAccountNo,
 		cfg.KISAccountType,
+		cfg.KISIsMock,
 		tokenManager,
 		db,
 	)
