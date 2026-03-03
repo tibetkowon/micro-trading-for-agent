@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -527,7 +528,7 @@ func (c *Client) CancelKISOrder(ctx context.Context, krxOrgNo, kisOrderID, ordDv
 }
 
 // GetOrderHistory fetches order history for the given date range with pagination.
-// startDate/endDate format: "20060102". Uses TTTC0081R (3개월 이내).
+// startDate/endDate format: "20060102". Uses TTTC0081R (real) / VTTC0081R (mock).
 func (c *Client) GetOrderHistory(ctx context.Context, startDate, endDate string) ([]map[string]any, error) {
 	endpoint := "/uapi/domestic-stock/v1/trading/inquire-daily-ccld"
 
@@ -535,9 +536,23 @@ func (c *Client) GetOrderHistory(ctx context.Context, startDate, endDate string)
 	fk100, nk100 := "", ""
 
 	for {
-		params := fmt.Sprintf(
-			"?CANO=%s&ACNT_PRDT_CD=%s&INQR_STRT_DT=%s&INQR_END_DT=%s&SLL_BUY_DVSN_CD=00&INQR_DVSN=00&INQR_DVSN_1=&INQR_DVSN_3=00&PDNO=&CCLD_DVSN=00&ORD_GNO_BRNO=&ODNO=&EXCG_ID_DVSN_CD=ALL&CTX_AREA_FK100=%s&CTX_AREA_NK100=%s",
-			c.accountNo, c.accountType, startDate, endDate, fk100, nk100)
+		q := url.Values{}
+		q.Set("CANO", c.accountNo)
+		q.Set("ACNT_PRDT_CD", c.accountType)
+		q.Set("INQR_STRT_DT", startDate)
+		q.Set("INQR_END_DT", endDate)
+		q.Set("SLL_BUY_DVSN_CD", "00")
+		q.Set("INQR_DVSN", "00")
+		q.Set("INQR_DVSN_1", "")
+		q.Set("INQR_DVSN_3", "00")
+		q.Set("PDNO", "")
+		q.Set("CCLD_DVSN", "00")
+		q.Set("ORD_GNO_BRNO", "")
+		q.Set("ODNO", "")
+		q.Set("EXCG_ID_DVSN_CD", "ALL")
+		q.Set("CTX_AREA_FK100", fk100)
+		q.Set("CTX_AREA_NK100", nk100)
+		params := "?" + q.Encode()
 
 		raw, err := c.get(ctx, endpoint, params, "TTTC0081R")
 		if err != nil {
