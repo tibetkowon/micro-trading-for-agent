@@ -113,6 +113,8 @@ npm run dev
 | Order Sync (`StartOrderSyncScheduler`) | 3분 | **장 중에만** 실행 (주말·공휴일·장 외 시간 자동 skip) |
 | Token Auto Refresh | 20시간 | 항상 (KIS 토큰 만료 24시간 기준 선제 갱신) |
 
+> **Order Sync 동작 원리**: KIS `inquire-daily-ccld` API (`TTTC0081R`)를 호출해 당일 체결 내역을 로컬 DB에 동기화합니다. 체결된 주문은 자동으로 `FILLED` / `PARTIALLY_FILLED` 상태로 업데이트되며, HTS/MTS에서 직접 체결된 수동 주문도 `MANUAL` 출처로 자동 인식합니다.
+
 ## Project Structure
 
 자세한 구조와 각 패키지의 역할은 [`docs/architecture.md`](docs/architecture.md)를 참조하세요.
