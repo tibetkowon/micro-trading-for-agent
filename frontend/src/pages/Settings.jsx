@@ -1,3 +1,4 @@
+import PropTypes from 'prop-types'
 import { useApi } from '../hooks/useApi'
 
 function Row({ label, children }) {
@@ -8,6 +9,7 @@ function Row({ label, children }) {
     </div>
   )
 }
+Row.propTypes = { label: PropTypes.string, children: PropTypes.node }
 
 function Badge({ ok, trueLabel = '설정됨', falseLabel = '미설정' }) {
   return (
@@ -20,6 +22,7 @@ function Badge({ ok, trueLabel = '설정됨', falseLabel = '미설정' }) {
     </span>
   )
 }
+Badge.propTypes = { ok: PropTypes.bool, trueLabel: PropTypes.string, falseLabel: PropTypes.string }
 
 function WsBadge({ connected }) {
   return (
@@ -32,6 +35,7 @@ function WsBadge({ connected }) {
     </span>
   )
 }
+WsBadge.propTypes = { connected: PropTypes.bool }
 
 export default function Settings() {
   const { data, loading, error } = useApi('/api/settings')

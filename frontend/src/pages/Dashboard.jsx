@@ -1,3 +1,4 @@
+import PropTypes from 'prop-types'
 import { useApi } from '../hooks/useApi'
 import Card from '../components/Card'
 
@@ -24,6 +25,7 @@ function StatusDot({ ok }) {
     <span className={`inline-block w-2 h-2 rounded-full mr-1.5 ${ok ? 'bg-green-400' : 'bg-gray-600'}`} />
   )
 }
+StatusDot.propTypes = { ok: PropTypes.bool }
 
 export default function Dashboard() {
   const { data: status, loading: statusLoading, refetch: refetchStatus } = useApi('/api/server/status')
