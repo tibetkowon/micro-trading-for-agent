@@ -21,7 +21,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.22'
+          go-version: '1.24'
           cache: true
           cache-dependency-path: backend/go.sum
 
@@ -38,10 +38,10 @@ jobs:
           fi
 
       - name: Build
-        run: go build ./...
+        run: CGO_ENABLED=1 go build ./...
 
       - name: Test
-        run: go test ./...
+        run: CGO_ENABLED=1 go test ./...
 
   frontend:
     name: React Lint & Build
@@ -79,11 +79,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # 1. Go 바이너리 빌드 (linux/amd64 크로스 컴파일)
+      # 1. Go 바이너리 빌드 (linux/amd64 — runner와 동일 플랫폼, CGO 활성화)
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.22'
+          go-version: '1.24'
           cache: true
           cache-dependency-path: backend/go.sum
 
@@ -91,7 +91,7 @@ jobs:
         working-directory: backend
         run: |
           go mod download
-          GOOS=linux GOARCH=amd64 go build -o server ./cmd/server
+          CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -o server ./cmd/server
 
       # 2. React 빌드
       - name: Set up Node.js
@@ -122,9 +122,9 @@ jobs:
           ssh ${{ secrets.NCP_USER }}@${{ secrets.NCP_HOST }} \
             "systemctl stop micro-trading || true"
 
-          # 디렉토리 구조 생성
+          # 디렉토리 구조 생성 (data/: SQLite 파일 경로)
           ssh ${{ secrets.NCP_USER }}@${{ secrets.NCP_HOST }} \
-            "mkdir -p /service/micro-trading-for-agent/frontend"
+            "mkdir -p /service/micro-trading-for-agent/frontend /service/micro-trading-for-agent/data"
 
           # Go 바이너리 전송
           scp backend/server \
@@ -134,9 +134,13 @@ jobs:
           rsync -az --delete frontend/dist/ \
             ${{ secrets.NCP_USER }}@${{ secrets.NCP_HOST }}:/service/micro-trading-for-agent/frontend/dist/
 
-      # 5. 서비스 시작
-      - name: Start service
+      # 5. 서비스 시작 및 기동 확인
+      - name: Start service and verify
         run: |
           ssh ${{ secrets.NCP_USER }}@${{ secrets.NCP_HOST }} \
             "chmod +x /service/micro-trading-for-agent/server && \
-             systemctl start micro-trading"
+             systemctl start micro-trading && \
+             sleep 3 && \
+             systemctl is-active --quiet micro-trading && \
+             echo 'Service is running' || \
+             (journalctl -u micro-trading --no-pager -n 30; exit 1)"
