@@ -7,7 +7,9 @@ NCP Micro (1GB RAM) 환경에서 효율적으로 동작하도록 설계되었습
 
 | Layer | Technology |
 |-------|-----------|
-| Backend | Go 1.22, Gin, SQLite (go-sqlite3) |
+| Backend | Go 1.24, Gin, SQLite (go-sqlite3) |
+| Realtime | KIS WebSocket (`gorilla/websocket`) |
+| Alerting | MQTT (`paho.mqtt.golang`) + Mosquitto |
 | Frontend | React 18, Vite, TailwindCSS |
 | Database | SQLite (WAL mode) |
 | CI/CD | GitHub Actions |
@@ -21,16 +23,18 @@ cp .env.example .env
 # .env 파일에 KIS API 키와 계좌 정보를 입력하세요
 ```
 
-`.env` 필수 항목:
+`.env` 필수/선택 항목:
 
-| 키 | 설명 |
-|----|------|
-| `KIS_APP_KEY` | KIS Open API 앱 키 |
-| `KIS_APP_SECRET` | KIS Open API 시크릿 |
-| `KIS_ACCOUNT_NO` | 계좌번호 (숫자만) |
-| `KIS_ACCOUNT_TYPE` | 계좌 종류 (`01` = 종합, `22` = 선물옵션) |
-| `KIS_BASE_URL` | 실전: `https://openapi.koreainvestment.com:9443` |
-| `KIS_IS_MOCK` | `true` = 모의투자, `false` = 실전투자 |
+| 키 | 필수 | 설명 |
+|----|------|------|
+| `KIS_APP_KEY` | ✅ | KIS Open API 앱 키 |
+| `KIS_APP_SECRET` | ✅ | KIS Open API 시크릿 |
+| `KIS_ACCOUNT_NO` | ✅ | 계좌번호 (숫자만) |
+| `KIS_ACCOUNT_TYPE` | | 계좌 종류 (`01`=종합, 기본값) |
+| `KIS_BASE_URL` | | 실전: `https://openapi.koreainvestment.com:9443` |
+| `KIS_HTS_ID` | | HTS 아이디 — 실시간 체결통보 수신 시 필요 |
+| `MQTT_BROKER_URL` | | MQTT 브로커 주소 (기본: `tcp://localhost:1883`) |
+| `MQTT_CLIENT_ID` | | MQTT 클라이언트 ID (기본: `micro-trading-server`) |
 
 ### 2. 백엔드 실행
 
@@ -49,6 +53,8 @@ npm install
 npm run dev
 # → http://localhost:3000
 ```
+
+---
 
 ## API Endpoints
 
@@ -70,23 +76,48 @@ npm run dev
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/api/orders` | 주문 내역 조회 (`?sync=true` KIS 체결 동기화, `?days=N` 범위) |
-| POST | `/api/orders` | 수동 주문 (테스트용) |
+| GET | `/api/orders` | 주문 내역 조회 (`?sync=true` KIS 체결 동기화, `?days=N`) |
+| POST | `/api/orders` | 주문 실행 (`target_pct`, `stop_pct` 포함 시 모니터 자동 등록) |
 | POST | `/api/orders/:id/cancel` | KIS 미체결 주문 취소 |
 | DELETE | `/api/orders/:id` | 주문 단건 삭제 |
 | GET | `/api/orders/feasibility?code=` | 주문가능수량 / 주문가능금액 조회 |
 
-### 장운영 상태
+주문 요청 예시 (목표가/손절가 포함):
+```json
+{
+  "stock_code": "005930",
+  "order_type": "BUY",
+  "qty": 10,
+  "price": 71000,
+  "target_pct": 3.0,
+  "stop_pct": 2.0
+}
+```
+
+### 실시간 모니터링
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/api/market/status` | 장운영 여부 조회 (KIS 영업일 기준, 당일 캐시) |
+| GET | `/api/monitor/positions` | 현재 모니터링 중인 포지션 목록 |
+| DELETE | `/api/monitor/positions/:code` | 모니터링 포지션 수동 해제 |
 
-응답 예시:
+### 서버 / 장 운영 상태
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/server/status` | 통합 서버 상태 (시장·WebSocket·모니터·예수금) |
+| GET | `/api/market/status` | 장운영 여부 (KIS 영업일 기준, 당일 캐시) |
+
+`GET /api/server/status` 응답 예시:
 ```json
-{ "is_open": false, "checked_at": "2026-03-02T10:00:00+09:00", "reason": "holiday" }
+{
+  "market_open": true,
+  "trading_enabled": true,
+  "available_cash": 500000,
+  "ws_connected": true,
+  "monitored_count": 2
+}
 ```
-`reason` 값: `open` / `weekend` / `outside_hours` / `holiday` / `check_failed`
 
 ### 순위
 
@@ -106,24 +137,52 @@ npm run dev
 | GET | `/api/settings` | 설정 조회 (민감 정보 마스킹) |
 | GET | `/health` | 헬스 체크 |
 
-## 스케줄러 동작
+---
 
-| 스케줄러 | 주기 | 조건 |
-|----------|------|------|
-| Order Sync (`StartOrderSyncScheduler`) | 3분 | **장 중에만** 실행 (주말·공휴일·장 외 시간 자동 skip) |
-| Token Auto Refresh | 20시간 | 항상 (KIS 토큰 만료 24시간 기준 선제 갱신) |
+## 스케줄러 / 자동화 동작
 
-> **Order Sync 동작 원리**: KIS `inquire-daily-ccld` API (`TTTC0081R`)를 호출해 당일 체결 내역을 로컬 DB에 동기화합니다. 체결된 주문은 자동으로 `FILLED` / `PARTIALLY_FILLED` 상태로 업데이트되며, HTS/MTS에서 직접 체결된 수동 주문도 `MANUAL` 출처로 자동 인식합니다.
+| 시각/주기 | 동작 | 조건 |
+|-----------|------|------|
+| **08:50 KST** | KIS WebSocket 연결 + 체결통보 구독 | 평일 |
+| **15:15 KST** | 모니터링 중인 포지션 전량 시장가 청산 | 평일 |
+| **16:00 KST** | WebSocket 연결 해제 | 평일 |
+| 5분 주기 | Order Sync (KIS 체결 내역 → DB 동기화) | 장 중에만 |
+| 20시간 주기 | KIS 액세스 토큰 자동 갱신 | 항상 |
+
+---
+
+## 실시간 알림 플로우 (MQTT)
+
+```
+에이전트 → POST /api/orders {target_pct: 3.0, stop_pct: 2.0}
+         → KIS 주문 접수
+         → monitor.Register(target=price×1.03, stop=price×0.98)
+
+KIS WebSocket (H0STCNT0 체결가)
+  현재가 ≥ 목표가 → MQTT "trading/alert/005930" TARGET_HIT
+  현재가 ≤ 손절가 → MQTT "trading/alert/005930" STOP_HIT
+
+15:15 → 전량 청산 → MQTT "trading/liquidation" LIQUIDATION
+```
+
+MQTT 설치 및 에이전트 연동 방법: [`docs/guides/mqtt-setup.md`](docs/guides/mqtt-setup.md)
+
+---
 
 ## Project Structure
 
-자세한 구조와 각 패키지의 역할은 [`docs/architecture.md`](docs/architecture.md)를 참조하세요.
+자세한 구조와 각 패키지의 역할: [`docs/architecture.md`](docs/architecture.md)
+
+DB 스키마 상세: [`docs/db_schema.md`](docs/db_schema.md)
+
+---
 
 ## Security
 
 - 모든 민감 정보 (API 키, 계좌번호)는 `.env` 파일로만 관리
 - `.env` 파일은 `.gitignore`에 의해 절대 커밋되지 않습니다
 - KIS API 에러는 `kis_api_logs` 테이블에 자동 기록됩니다
+- MQTT 외부 포트 접근은 IP 화이트리스트 + 비밀번호 인증 권장
 
 ## License
 

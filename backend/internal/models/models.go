@@ -47,8 +47,22 @@ type Order struct {
 	FilledPrice float64     `json:"filled_price"` // 체결가 (체결 후 avg_prvs 기준)
 	Status      OrderStatus `json:"status"`
 	KISOrderID  string      `json:"kis_order_id"`
-	Source      OrderSource `json:"source"` // AGENT: 에이전트 주문 / MANUAL: 수동 거래 감지
+	Source      OrderSource `json:"source"`     // AGENT: 에이전트 주문 / MANUAL: 수동 거래 감지
+	TargetPct   float64     `json:"target_pct"` // 목표 수익률 (%)
+	StopPct     float64     `json:"stop_pct"`   // 손절 비율 (%)
 	CreatedAt   time.Time   `json:"created_at"`
+}
+
+// MonitoredPosition is a buy position being watched for target/stop price hits.
+type MonitoredPosition struct {
+	ID          int64     `json:"id"`
+	StockCode   string    `json:"stock_code"`
+	StockName   string    `json:"stock_name"`
+	FilledPrice float64   `json:"filled_price"`
+	TargetPrice float64   `json:"target_price"` // FilledPrice × (1 + target_pct/100)
+	StopPrice   float64   `json:"stop_price"`   // FilledPrice × (1 - stop_pct/100)
+	OrderID     int64     `json:"order_id"`
+	CreatedAt   time.Time `json:"created_at"`
 }
 
 // Balance is a point-in-time snapshot of the account balance.

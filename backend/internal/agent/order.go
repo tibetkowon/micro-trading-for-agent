@@ -24,6 +24,8 @@ type PlaceOrderRequest struct {
 	Qty       int
 	Price     float64 // 0 for market order
 	OrderDivn string  // "00"=지정가, "01"=시장가
+	TargetPct float64 // 목표 수익률 (%) — 0이면 모니터링 미등록
+	StopPct   float64 // 손절 비율 (%) — 0이면 모니터링 미등록
 }
 
 // OrderFeasibility is returned by CheckOrderFeasibility.
@@ -94,9 +96,10 @@ func PlaceOrder(ctx context.Context, client *kis.Client, db *database.DB, req Pl
 
 	// Persist order regardless of outcome for full audit trail.
 	result, dbErr := db.ExecContext(ctx,
-		`INSERT INTO orders (stock_code, order_type, qty, price, status, kis_order_id, created_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		req.StockCode, string(req.OrderType), req.Qty, req.Price, string(status), kisOrderID, time.Now().UTC(),
+		`INSERT INTO orders (stock_code, order_type, qty, price, status, kis_order_id, target_pct, stop_pct, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		req.StockCode, string(req.OrderType), req.Qty, req.Price, string(status), kisOrderID,
+		req.TargetPct, req.StopPct, time.Now().UTC(),
 	)
 	if dbErr != nil {
 		return nil, fmt.Errorf("persist order: %w", dbErr)

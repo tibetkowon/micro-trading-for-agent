@@ -31,6 +31,14 @@ func SetupRouter(h *Handler, frontendDist string) *gin.Engine {
 		api.GET("/settings", h.GetSettings)
 		api.GET("/debug/balance", h.DebugRawBalance)
 
+		api.GET("/server/status", h.GetServerStatus)
+
+		monitorGroup := api.Group("/monitor")
+		{
+			monitorGroup.GET("/positions", h.GetMonitorPositions)
+			monitorGroup.DELETE("/positions/:code", h.RemoveMonitorPosition)
+		}
+
 		market := api.Group("/market")
 		{
 			market.GET("/status", h.GetMarketStatus)

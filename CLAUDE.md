@@ -54,4 +54,6 @@ Always trigger the following skills under their specific conditions by reading a
 9. **Context Evolution (`.claude/skills/manage_skills.md`):** - **Trigger:** When discovering new API quirks, project rules, or recurring patterns.
    - **Action:** Document them as new skills or context files so they are not forgotten.
 10. **KIS API 구현 (`.claude/skills/implement_kis_feature.md`):** - **Trigger:** KIS API 신규 기능 구현 또는 기존 기능 개선 시.
-   - **Action:** `docs/kis-api/` 에서 관련 명세 문서(기본시세/순위분석/종목정보/주문계좌)를 읽고 올바른 스펙으로 구현.
+   - **Action:** `docs/kis-api/` 에서 관련 명세 문서(기본시세/순위분석/종목정보/주문계좌/인증/실시간)를 읽고 올바른 스펙으로 구현.
+11. **SKILL.md 생성/갱신 (`.claude/skills/generate_openclaw_spec.md`):** - **Trigger:** 프로젝트 진입점(CLI/API) 변경 시 또는 사용자가 "SKILL.md 업데이트" 요청 시.
+   - **Action:** YAML Frontmatter를 포함한 `SKILL.md` 파일을 루트에 생성·업데이트하여 OpenClaw 인덱싱 정보를 유지.

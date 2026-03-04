@@ -12,6 +12,7 @@ import (
 	"github.com/micro-trading-for-agent/backend/internal/database"
 	"github.com/micro-trading-for-agent/backend/internal/kis"
 	"github.com/micro-trading-for-agent/backend/internal/models"
+	"github.com/micro-trading-for-agent/backend/internal/monitor"
 )
 
 // Handler holds shared dependencies for all HTTP handlers.
@@ -20,11 +21,21 @@ type Handler struct {
 	client       *kis.Client
 	tokenManager *kis.TokenManager
 	cfg          *config.Config
+	monitor      *monitor.Monitor
+	wsClient     *kis.WebSocketClient
 }
 
 // NewHandler creates a new Handler with the given dependencies.
-func NewHandler(db *database.DB, client *kis.Client, tokenManager *kis.TokenManager, cfg *config.Config) *Handler {
-	return &Handler{db: db, client: client, tokenManager: tokenManager, cfg: cfg}
+func NewHandler(db *database.DB, client *kis.Client, tokenManager *kis.TokenManager,
+	cfg *config.Config, mon *monitor.Monitor, wsClient *kis.WebSocketClient) *Handler {
+	return &Handler{
+		db:           db,
+		client:       client,
+		tokenManager: tokenManager,
+		cfg:          cfg,
+		monitor:      mon,
+		wsClient:     wsClient,
+	}
 }
 
 // GET /api/balance
@@ -134,13 +145,16 @@ func (h *Handler) DeleteKISLog(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"deleted": id})
 }
 
-// POST /api/orders — manual order for testing
+// POST /api/orders — place a buy/sell order
+// Optional: target_pct and stop_pct register a position for real-time monitoring.
 func (h *Handler) PlaceOrder(c *gin.Context) {
 	var req struct {
 		StockCode string  `json:"stock_code" binding:"required"`
 		OrderType string  `json:"order_type" binding:"required"`
 		Qty       int     `json:"qty" binding:"required,min=1"`
 		Price     float64 `json:"price"`
+		TargetPct float64 `json:"target_pct"` // 목표 수익률 (%)
+		StopPct   float64 `json:"stop_pct"`   // 손절 비율 (%)
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -169,12 +183,111 @@ func (h *Handler) PlaceOrder(c *gin.Context) {
 		Qty:       req.Qty,
 		Price:     req.Price,
 		OrderDivn: divn,
+		TargetPct: req.TargetPct,
+		StopPct:   req.StopPct,
 	})
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+
+	// BUY 주문이고 target/stop 설정 시 → 모니터링 등록 (체결가는 주문가로 근사)
+	// 실제 체결가는 WebSocket 체결통보로 업데이트됨.
+	if orderType == models.OrderTypeBuy && req.TargetPct > 0 && req.StopPct > 0 && h.monitor != nil {
+		filledPrice := req.Price
+		if filledPrice <= 0 {
+			// 시장가 주문: 현재가로 목표/손절 계산 (이후 체결통보로 재보정 가능)
+			if info, priceErr := h.client.GetStockPrice(c.Request.Context(), req.StockCode); priceErr == nil {
+				if p := parseFloat(info.CurrentPrice); p > 0 {
+					filledPrice = p
+				}
+			}
+		}
+		if filledPrice > 0 {
+			entry := monitor.MonitoredEntry{
+				StockCode:   req.StockCode,
+				StockName:   req.StockCode, // 종목명은 DB 동기화 전까지 코드로 대체
+				FilledPrice: filledPrice,
+				TargetPrice: filledPrice * (1 + req.TargetPct/100),
+				StopPrice:   filledPrice * (1 - req.StopPct/100),
+				OrderID:     result.OrderID,
+			}
+			if regErr := h.monitor.Register(c.Request.Context(), entry); regErr != nil {
+				// 등록 실패는 치명적이지 않음 — 로그만 남김
+				_ = regErr
+			}
+		}
+	}
+
 	c.JSON(http.StatusCreated, result)
+}
+
+// GET /api/server/status — 통합 서버 상태 (시장개장/WebSocket연결/모니터링 수)
+func (h *Handler) GetServerStatus(c *gin.Context) {
+	now := time.Now().In(agent.KSTLocation())
+
+	marketOpen := false
+	if wd := now.Weekday(); wd != time.Saturday && wd != time.Sunday {
+		min := now.Hour()*60 + now.Minute()
+		if min >= 9*60 && min < 15*60+30 {
+			marketOpen = true
+		}
+	}
+
+	wsConnected := false
+	if h.wsClient != nil {
+		wsConnected = h.wsClient.IsConnected()
+	}
+
+	monitoredCount := 0
+	if h.monitor != nil {
+		monitoredCount = h.monitor.Count()
+	}
+
+	// Available cash from balance
+	availableCash := float64(0)
+	if bal, err := h.client.GetInquireBalance(c.Request.Context()); err == nil {
+		availableCash = parseFloat(bal.DepositAmt)
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"market_open":     marketOpen,
+		"trading_enabled": marketOpen,
+		"available_cash":  availableCash,
+		"ws_connected":    wsConnected,
+		"monitored_count": monitoredCount,
+	})
+}
+
+// GET /api/monitor/positions — 현재 모니터링 중인 포지션 목록
+func (h *Handler) GetMonitorPositions(c *gin.Context) {
+	if h.monitor == nil {
+		c.JSON(http.StatusOK, gin.H{"positions": []any{}})
+		return
+	}
+	positions := h.monitor.List()
+	if positions == nil {
+		positions = []models.MonitoredPosition{}
+	}
+	c.JSON(http.StatusOK, gin.H{"positions": positions})
+}
+
+// DELETE /api/monitor/positions/:code — 모니터링 포지션 제거
+func (h *Handler) RemoveMonitorPosition(c *gin.Context) {
+	code := c.Param("code")
+	if code == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "stock code required"})
+		return
+	}
+	if h.monitor != nil {
+		h.monitor.Remove(c.Request.Context(), code)
+	}
+	c.JSON(http.StatusOK, gin.H{"removed": code})
+}
+
+func parseFloat(s string) float64 {
+	f, _ := strconv.ParseFloat(s, 64)
+	return f
 }
 
 // GET /api/positions — KIS 실시간 보유 종목 조회 (inquire-balance output1)

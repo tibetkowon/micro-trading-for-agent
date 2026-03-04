@@ -84,6 +84,17 @@ func (db *DB) migrate() error {
 			raw_response TEXT    NOT NULL DEFAULT '',
 			timestamp    DATETIME NOT NULL DEFAULT (datetime('now'))
 		)`,
+
+		`CREATE TABLE IF NOT EXISTS monitored_positions (
+			id           INTEGER PRIMARY KEY AUTOINCREMENT,
+			stock_code   TEXT    NOT NULL UNIQUE,
+			stock_name   TEXT    NOT NULL DEFAULT '',
+			filled_price REAL    NOT NULL DEFAULT 0,
+			target_price REAL    NOT NULL DEFAULT 0,
+			stop_price   REAL    NOT NULL DEFAULT 0,
+			order_id     INTEGER NOT NULL DEFAULT 0,
+			created_at   DATETIME NOT NULL DEFAULT (datetime('now'))
+		)`,
 	}
 
 	for _, s := range stmts {
@@ -97,6 +108,8 @@ func (db *DB) migrate() error {
 		`ALTER TABLE orders ADD COLUMN stock_name   TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE orders ADD COLUMN filled_price REAL NOT NULL DEFAULT 0`,
 		`ALTER TABLE orders ADD COLUMN source       TEXT NOT NULL DEFAULT 'AGENT'`,
+		`ALTER TABLE orders ADD COLUMN target_pct   REAL NOT NULL DEFAULT 0`,
+		`ALTER TABLE orders ADD COLUMN stop_pct     REAL NOT NULL DEFAULT 0`,
 	}
 	for _, s := range alterStmts {
 		// "duplicate column name" 에러는 정상 (이미 존재하는 경우) — 무시

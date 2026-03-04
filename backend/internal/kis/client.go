@@ -170,6 +170,46 @@ type CancellableOrderItem struct {
 	SllBuyDvsnCd string `json:"sll_buy_dvsn_cd"` // 01=매도, 02=매수
 }
 
+// GetApprovalKey issues a WebSocket approval key (접속키) via POST /oauth2/Approval.
+// The key is used as the authentication header when opening a KIS WebSocket connection.
+// It is valid for 24 hours but only needed once per WebSocket session.
+func (c *Client) GetApprovalKey(ctx context.Context) (string, error) {
+	body, _ := json.Marshal(map[string]string{
+		"grant_type": "client_credentials",
+		"appkey":     c.appKey,
+		"secretkey":  c.appSecret,
+	})
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
+		c.baseURL+"/oauth2/Approval", bytes.NewReader(body))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Content-Type", "application/json; charset=utf-8")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("GetApprovalKey request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	raw, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("GetApprovalKey HTTP %d: %s", resp.StatusCode, raw)
+	}
+
+	var result struct {
+		ApprovalKey string `json:"approval_key"`
+	}
+	if err := json.Unmarshal(raw, &result); err != nil {
+		return "", fmt.Errorf("GetApprovalKey parse: %w", err)
+	}
+	if result.ApprovalKey == "" {
+		return "", fmt.Errorf("GetApprovalKey: empty approval_key in response")
+	}
+	return result.ApprovalKey, nil
+}
+
 // --- Public API methods ---
 
 // GetStockPrice fetches the current price for the given stock code.
