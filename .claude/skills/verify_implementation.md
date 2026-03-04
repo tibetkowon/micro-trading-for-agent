@@ -1,7 +1,11 @@
+---
+name: verify-implementation
+description: Enforces self-verification of Go and React code quality and build stability before git commits.
+---
 # Skill: Verify Implementation Before Commit
 
 ## Description
-This skill enforces self-verification to ensure code quality and prevent broken builds on the resource-constrained NCP Micro server. It must be run before finalizing any code changes.
+This skill enforces self-verification to ensure code quality and prevent broken builds. It must be run before finalizing any code changes.
 
 ## Trigger
 Execute this skill immediately after writing or modifying Go or React code, and BEFORE creating a git commit or telling the user the task is complete.

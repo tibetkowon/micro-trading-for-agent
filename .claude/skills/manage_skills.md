@@ -1,3 +1,7 @@
+---
+name: manage-skills
+description: A meta-skill to learn and adapt by documenting recurring patterns, API quirks, or project rules in .claude/skills/ or docs/.
+---
 # Skill: Manage and Evolve Context/Skills
 
 ## Description
