@@ -371,10 +371,19 @@ func (h *Handler) GetSettings(c *gin.Context) {
 		maskedAccount = "****" + accountNo[len(accountNo)-4:]
 	}
 
+	wsConnected := false
+	if h.wsClient != nil {
+		wsConnected = h.wsClient.IsConnected()
+	}
+
 	c.JSON(http.StatusOK, gin.H{
-		"account_no":     maskedAccount,
-		"kis_configured": h.cfg.KISAppKey != "" && h.cfg.KISAppSecret != "",
-		"account_type":   h.cfg.KISAccountType,
+		"account_no":        maskedAccount,
+		"account_type":      h.cfg.KISAccountType,
+		"kis_configured":    h.cfg.KISAppKey != "" && h.cfg.KISAppSecret != "",
+		"hts_id_configured": h.cfg.KISHTSID != "",
+		"mqtt_broker_url":   h.cfg.MQTTBrokerURL,
+		"mqtt_client_id":    h.cfg.MQTTClientID,
+		"ws_connected":      wsConnected,
 	})
 }
 
