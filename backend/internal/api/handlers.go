@@ -1,9 +1,12 @@
 package api
 
 import (
+	"bufio"
 	"context"
 	"net/http"
+	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -385,6 +388,105 @@ func (h *Handler) GetSettings(c *gin.Context) {
 		"mqtt_client_id":    h.cfg.MQTTClientID,
 		"ws_connected":      wsConnected,
 	})
+}
+
+// PATCH /api/settings — .env 파일 설정 업데이트 (빈 필드는 기존 값 유지)
+func (h *Handler) UpdateSettings(c *gin.Context) {
+	var req struct {
+		KISAppKey      string `json:"kis_app_key"`
+		KISAppSecret   string `json:"kis_app_secret"`
+		KISAccountNo   string `json:"kis_account_no"`
+		KISAccountType string `json:"kis_account_type"`
+		KISBaseURL     string `json:"kis_base_url"`
+		KISHTSID       string `json:"kis_hts_id"`
+		MQTTBrokerURL  string `json:"mqtt_broker_url"`
+		MQTTClientID   string `json:"mqtt_client_id"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	updates := map[string]string{}
+	if req.KISAppKey != "" {
+		updates["KIS_APP_KEY"] = req.KISAppKey
+	}
+	if req.KISAppSecret != "" {
+		updates["KIS_APP_SECRET"] = req.KISAppSecret
+	}
+	if req.KISAccountNo != "" {
+		updates["KIS_ACCOUNT_NO"] = req.KISAccountNo
+	}
+	if req.KISAccountType != "" {
+		updates["KIS_ACCOUNT_TYPE"] = req.KISAccountType
+	}
+	if req.KISBaseURL != "" {
+		updates["KIS_BASE_URL"] = req.KISBaseURL
+	}
+	if req.KISHTSID != "" {
+		updates["KIS_HTS_ID"] = req.KISHTSID
+	}
+	if req.MQTTBrokerURL != "" {
+		updates["MQTT_BROKER_URL"] = req.MQTTBrokerURL
+	}
+	if req.MQTTClientID != "" {
+		updates["MQTT_CLIENT_ID"] = req.MQTTClientID
+	}
+
+	if len(updates) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "변경할 항목이 없습니다"})
+		return
+	}
+
+	if err := updateEnvFile(".env", updates); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "설정 저장 실패: " + err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message":          "설정이 저장되었습니다. 서버를 재시작해야 적용됩니다.",
+		"restart_required": true,
+	})
+}
+
+// updateEnvFile reads .env, updates the given key=value pairs, and writes it back.
+// Comments and blank lines are preserved. Keys not in the file are appended.
+func updateEnvFile(path string, updates map[string]string) error {
+	var lines []string
+
+	if f, err := os.Open(path); err == nil {
+		scanner := bufio.NewScanner(f)
+		for scanner.Scan() {
+			lines = append(lines, scanner.Text())
+		}
+		f.Close()
+	}
+
+	updated := make(map[string]bool)
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		parts := strings.SplitN(trimmed, "=", 2)
+		if len(parts) < 1 {
+			continue
+		}
+		key := strings.TrimSpace(parts[0])
+		if newVal, ok := updates[key]; ok {
+			lines[i] = key + "=" + newVal
+			updated[key] = true
+		}
+	}
+
+	// Append keys that weren't found in the file
+	for key, val := range updates {
+		if !updated[key] {
+			lines = append(lines, key+"="+val)
+		}
+	}
+
+	return os.WriteFile(path, []byte(strings.Join(lines, "\n")+"\n"), 0600)
 }
 
 // GET /api/orders/feasibility?code=:code — 주문가능수량 및 주문가능금액 조회 (TTTC8908R)
