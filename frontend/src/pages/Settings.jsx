@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import PropTypes from 'prop-types'
 import { useApi } from '../hooks/useApi'
 
@@ -31,44 +31,41 @@ function WsBadge({ connected }) {
 }
 WsBadge.propTypes = { connected: PropTypes.bool }
 
-/* ── 입력 필드 ── */
-function Field({ label, hint, children }) {
-  return (
-    <div>
-      <label className="block text-xs text-gray-400 mb-1">
-        {label}
-        {hint && <span className="ml-1.5 text-gray-600">{hint}</span>}
-      </label>
-      {children}
-    </div>
-  )
-}
-Field.propTypes = { label: PropTypes.string, hint: PropTypes.string, children: PropTypes.node }
-
-const inputCls =
-  'w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:border-blue-500'
-
-const REAL_URL = 'https://openapi.koreainvestment.com:9443'
-const MOCK_URL = 'https://openapivts.koreainvestment.com:29443'
+// FID_TRGT_EXLS_CLS_CODE 10자리 각 비트의 의미
+const EXCL_LABELS = [
+  '투자위험',
+  '투자경고',
+  '투자주의',
+  '관리종목',
+  '정리매매',
+  '불성실공시',
+  '우선주',
+  '거래정지',
+  'ETF',
+  'ETN',
+]
 
 export default function Settings() {
   const { data, loading, error, refetch } = useApi('/api/settings')
 
-  const [form, setForm] = useState({
-    kis_app_key: '',
-    kis_app_secret: '',
-    kis_account_no: '',
-    kis_account_type: '',
-    kis_base_url: '',
-    kis_hts_id: '',
-    mqtt_broker_url: '',
-    mqtt_client_id: '',
-  })
-  const [saving, setSaving] = useState(false)
-  const [saveResult, setSaveResult] = useState(null) // { ok, text }
+  // Trading ON/OFF
+  const [tradingEnabled, setTradingEnabled] = useState(true)
+  // 10개 체크박스 (각 index = 해당 비트, true = 제외)
+  const [exclBits, setExclBits] = useState(Array(10).fill(true))
 
-  function handleChange(e) {
-    setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }))
+  const [saving, setSaving] = useState(false)
+  const [saveResult, setSaveResult] = useState(null)
+
+  // 서버에서 읽어온 값으로 초기화
+  useEffect(() => {
+    if (!data) return
+    setTradingEnabled(data.trading_enabled !== false)
+    const cls = data.ranking_excl_cls || '1111111111'
+    setExclBits(cls.split('').map((ch) => ch === '1'))
+  }, [data])
+
+  function toggleBit(i) {
+    setExclBits((prev) => prev.map((v, idx) => (idx === i ? !v : v)))
   }
 
   async function handleSave(e) {
@@ -76,14 +73,10 @@ export default function Settings() {
     setSaving(true)
     setSaveResult(null)
 
-    // 빈 필드는 전송하지 않음 (기존 값 유지)
-    const body = Object.fromEntries(
-      Object.entries(form).filter(([, v]) => v.trim() !== '')
-    )
-    if (Object.keys(body).length === 0) {
-      setSaveResult({ ok: false, text: '변경할 항목을 입력하세요.' })
-      setSaving(false)
-      return
+    const rankingExclCls = exclBits.map((b) => (b ? '1' : '0')).join('')
+    const body = {
+      trading_enabled: tradingEnabled,
+      ranking_excl_cls: rankingExclCls,
     }
 
     try {
@@ -96,12 +89,7 @@ export default function Settings() {
       if (!res.ok) {
         setSaveResult({ ok: false, text: json.error || '저장 실패' })
       } else {
-        setSaveResult({ ok: true, text: json.message })
-        setForm({
-          kis_app_key: '', kis_app_secret: '', kis_account_no: '',
-          kis_account_type: '', kis_base_url: '', kis_hts_id: '',
-          mqtt_broker_url: '', mqtt_client_id: '',
-        })
+        setSaveResult({ ok: true, text: json.message || '저장되었습니다.' })
         refetch()
       }
     } catch (err) {
@@ -119,118 +107,63 @@ export default function Settings() {
       {saveResult && (
         <div className={`rounded p-3 text-sm ${saveResult.ok ? 'bg-green-900/30 border border-green-700 text-green-300' : 'bg-red-900/30 border border-red-700 text-red-300'}`}>
           {saveResult.text}
-          {saveResult.ok && (
-            <span className="ml-2 text-yellow-400 font-semibold">⚠ 서버 재시작 필요</span>
-          )}
         </div>
       )}
 
       {/* ── 편집 폼 ── */}
       <form onSubmit={handleSave} className="space-y-5">
 
-        {/* KIS 인증 */}
+        {/* Trading ON/OFF */}
         <div className="bg-gray-900 border border-gray-800 rounded-lg p-5 space-y-4">
-          <p className="text-xs text-gray-500 uppercase tracking-wider">KIS API 인증</p>
+          <p className="text-xs text-gray-500 uppercase tracking-wider">거래 제어</p>
 
-          <Field label="APP KEY" hint="(입력 시 덮어쓰기)">
-            <input
-              name="kis_app_key"
-              type="password"
-              value={form.kis_app_key}
-              onChange={handleChange}
-              placeholder="변경할 경우 입력"
-              className={inputCls}
-              autoComplete="off"
-            />
-          </Field>
-
-          <Field label="APP SECRET" hint="(입력 시 덮어쓰기)">
-            <input
-              name="kis_app_secret"
-              type="password"
-              value={form.kis_app_secret}
-              onChange={handleChange}
-              placeholder="변경할 경우 입력"
-              className={inputCls}
-              autoComplete="off"
-            />
-          </Field>
-
-          <Field label="계좌번호" hint="앞 8자리만 (예: 12345678)">
-            <input
-              name="kis_account_no"
-              type="text"
-              value={form.kis_account_no}
-              onChange={handleChange}
-              placeholder="12345678"
-              maxLength={8}
-              className={inputCls}
-            />
-          </Field>
-
-          <Field label="계좌 유형">
-            <select
-              name="kis_account_type"
-              value={form.kis_account_type}
-              onChange={handleChange}
-              className={inputCls}
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-gray-200">Trading</p>
+              <p className="text-xs text-gray-500 mt-0.5">OFF 시 주문 API가 차단됩니다</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setTradingEnabled((v) => !v)}
+              className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors focus:outline-none ${tradingEnabled ? 'bg-green-600' : 'bg-gray-700'}`}
             >
-              <option value="">— 변경 안 함 —</option>
-              <option value="01">01 — 종합계좌</option>
-              <option value="22">22 — 선물옵션</option>
-            </select>
-          </Field>
-
-          <Field label="API Base URL">
-            <select
-              name="kis_base_url"
-              value={form.kis_base_url}
-              onChange={handleChange}
-              className={inputCls}
-            >
-              <option value="">— 변경 안 함 —</option>
-              <option value={REAL_URL}>실전투자</option>
-              <option value={MOCK_URL}>모의투자</option>
-            </select>
-          </Field>
-
-          <Field label="HTS ID" hint="실시간 체결통보(H0STCNI0) 수신 시 필요">
-            <input
-              name="kis_hts_id"
-              type="text"
-              value={form.kis_hts_id}
-              onChange={handleChange}
-              placeholder="HTS 로그인 ID"
-              className={inputCls}
-            />
-          </Field>
+              <span
+                className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${tradingEnabled ? 'translate-x-6' : 'translate-x-1'}`}
+              />
+            </button>
+          </div>
+          <p className="text-xs text-center font-semibold">
+            {tradingEnabled
+              ? <span className="text-green-400">거래 활성화 (ON)</span>
+              : <span className="text-red-400">거래 비활성화 (OFF)</span>
+            }
+          </p>
         </div>
 
-        {/* MQTT */}
-        <div className="bg-gray-900 border border-gray-800 rounded-lg p-5 space-y-4">
-          <p className="text-xs text-gray-500 uppercase tracking-wider">MQTT 알림</p>
+        {/* 순위조회 종목 제외 필터 */}
+        <div className="bg-gray-900 border border-gray-800 rounded-lg p-5 space-y-3">
+          <div>
+            <p className="text-xs text-gray-500 uppercase tracking-wider">순위조회 제외 종목</p>
+            <p className="text-xs text-gray-600 mt-1">체크된 항목은 순위조회 결과에서 제외됩니다 (FID_TRGT_EXLS_CLS_CODE)</p>
+          </div>
 
-          <Field label="브로커 URL">
-            <input
-              name="mqtt_broker_url"
-              type="text"
-              value={form.mqtt_broker_url}
-              onChange={handleChange}
-              placeholder="tcp://localhost:1883"
-              className={inputCls}
-            />
-          </Field>
+          <div className="grid grid-cols-2 gap-2">
+            {EXCL_LABELS.map((label, i) => (
+              <label key={i} className="flex items-center gap-2 cursor-pointer group">
+                <input
+                  type="checkbox"
+                  checked={exclBits[i]}
+                  onChange={() => toggleBit(i)}
+                  className="w-4 h-4 rounded border-gray-600 bg-gray-800 text-blue-500 focus:ring-blue-500 focus:ring-offset-gray-900"
+                />
+                <span className="text-sm text-gray-300 group-hover:text-white transition-colors">{label}</span>
+              </label>
+            ))}
+          </div>
 
-          <Field label="클라이언트 ID">
-            <input
-              name="mqtt_client_id"
-              type="text"
-              value={form.mqtt_client_id}
-              onChange={handleChange}
-              placeholder="micro-trading-server"
-              className={inputCls}
-            />
-          </Field>
+          <p className="text-xs text-gray-600 font-mono">
+            현재 값: {exclBits.map((b) => (b ? '1' : '0')).join('')}
+          </p>
         </div>
 
         <button
@@ -248,7 +181,7 @@ export default function Settings() {
       )}
       {!loading && data && (
         <div className="space-y-3">
-          <p className="text-xs text-gray-500 uppercase tracking-wider">현재 상태</p>
+          <p className="text-xs text-gray-500 uppercase tracking-wider">서버 정보 (읽기 전용)</p>
 
           <div className="bg-gray-900 border border-gray-800 rounded-lg p-5">
             <p className="text-xs text-gray-500 uppercase tracking-wider mb-3">계좌 정보</p>
@@ -272,7 +205,7 @@ export default function Settings() {
       )}
 
       <p className="text-xs text-gray-600">
-        설정 변경 후 서버를 재시작해야 적용됩니다. 민감 정보는 서버의 .env 파일에 저장됩니다.
+        KIS API 키, 계좌 정보 등 민감 정보는 서버의 .env 파일에서 관리합니다.
       </p>
     </div>
   )

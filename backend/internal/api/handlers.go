@@ -1,12 +1,9 @@
 package api
 
 import (
-	"bufio"
 	"context"
 	"net/http"
-	"os"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -164,6 +161,11 @@ func (h *Handler) PlaceOrder(c *gin.Context) {
 		return
 	}
 
+	if h.db.GetSetting(c.Request.Context(), "trading_enabled") == "false" {
+		c.JSON(http.StatusForbidden, gin.H{"error": "거래가 비활성화되어 있습니다. 설정에서 Trading을 ON으로 변경하세요."})
+		return
+	}
+
 	var orderType models.OrderType
 	switch req.OrderType {
 	case "BUY":
@@ -253,9 +255,11 @@ func (h *Handler) GetServerStatus(c *gin.Context) {
 		availableCash = parseFloat(bal.DepositAmt)
 	}
 
+	tradingEnabled := h.db.GetSetting(c.Request.Context(), "trading_enabled") != "false"
+
 	c.JSON(http.StatusOK, gin.H{
 		"market_open":     marketOpen,
-		"trading_enabled": marketOpen,
+		"trading_enabled": tradingEnabled,
 		"available_cash":  availableCash,
 		"ws_connected":    wsConnected,
 		"monitored_count": monitoredCount,
@@ -366,7 +370,7 @@ func (h *Handler) GetStockChart(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"stock_code": code, "interval": interval, "candles": candles})
 }
 
-// GET /api/settings — 읽기 전용 서버 상태 조회 (민감 정보 제외)
+// GET /api/settings — 서버 상태 및 런타임 설정 조회
 func (h *Handler) GetSettings(c *gin.Context) {
 	accountNo := h.cfg.KISAccountNo
 	maskedAccount := ""
@@ -379,6 +383,12 @@ func (h *Handler) GetSettings(c *gin.Context) {
 		wsConnected = h.wsClient.IsConnected()
 	}
 
+	tradingEnabled := h.db.GetSetting(c.Request.Context(), "trading_enabled") != "false"
+	rankingExclCls := h.db.GetSetting(c.Request.Context(), "ranking_excl_cls")
+	if rankingExclCls == "" {
+		rankingExclCls = "1111111111"
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"account_no":        maskedAccount,
 		"account_type":      h.cfg.KISAccountType,
@@ -387,106 +397,55 @@ func (h *Handler) GetSettings(c *gin.Context) {
 		"mqtt_broker_url":   h.cfg.MQTTBrokerURL,
 		"mqtt_client_id":    h.cfg.MQTTClientID,
 		"ws_connected":      wsConnected,
+		"trading_enabled":   tradingEnabled,
+		"ranking_excl_cls":  rankingExclCls,
 	})
 }
 
-// PATCH /api/settings — .env 파일 설정 업데이트 (빈 필드는 기존 값 유지)
+// PATCH /api/settings — 런타임 설정 업데이트 (trading_enabled, ranking_excl_cls)
 func (h *Handler) UpdateSettings(c *gin.Context) {
 	var req struct {
-		KISAppKey      string `json:"kis_app_key"`
-		KISAppSecret   string `json:"kis_app_secret"`
-		KISAccountNo   string `json:"kis_account_no"`
-		KISAccountType string `json:"kis_account_type"`
-		KISBaseURL     string `json:"kis_base_url"`
-		KISHTSID       string `json:"kis_hts_id"`
-		MQTTBrokerURL  string `json:"mqtt_broker_url"`
-		MQTTClientID   string `json:"mqtt_client_id"`
+		TradingEnabled *bool  `json:"trading_enabled"`
+		RankingExclCls string `json:"ranking_excl_cls"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	updates := map[string]string{}
-	if req.KISAppKey != "" {
-		updates["KIS_APP_KEY"] = req.KISAppKey
-	}
-	if req.KISAppSecret != "" {
-		updates["KIS_APP_SECRET"] = req.KISAppSecret
-	}
-	if req.KISAccountNo != "" {
-		updates["KIS_ACCOUNT_NO"] = req.KISAccountNo
-	}
-	if req.KISAccountType != "" {
-		updates["KIS_ACCOUNT_TYPE"] = req.KISAccountType
-	}
-	if req.KISBaseURL != "" {
-		updates["KIS_BASE_URL"] = req.KISBaseURL
-	}
-	if req.KISHTSID != "" {
-		updates["KIS_HTS_ID"] = req.KISHTSID
-	}
-	if req.MQTTBrokerURL != "" {
-		updates["MQTT_BROKER_URL"] = req.MQTTBrokerURL
-	}
-	if req.MQTTClientID != "" {
-		updates["MQTT_CLIENT_ID"] = req.MQTTClientID
+	ctx := c.Request.Context()
+	changed := false
+
+	if req.TradingEnabled != nil {
+		val := "true"
+		if !*req.TradingEnabled {
+			val = "false"
+		}
+		if err := h.db.SetSetting(ctx, "trading_enabled", val); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "저장 실패: " + err.Error()})
+			return
+		}
+		changed = true
 	}
 
-	if len(updates) == 0 {
+	if req.RankingExclCls != "" {
+		if len(req.RankingExclCls) != 10 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "ranking_excl_cls는 10자리 문자열이어야 합니다"})
+			return
+		}
+		if err := h.db.SetSetting(ctx, "ranking_excl_cls", req.RankingExclCls); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "저장 실패: " + err.Error()})
+			return
+		}
+		changed = true
+	}
+
+	if !changed {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "변경할 항목이 없습니다"})
 		return
 	}
 
-	if err := updateEnvFile(".env", updates); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "설정 저장 실패: " + err.Error()})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"message":          "설정이 저장되었습니다. 서버를 재시작해야 적용됩니다.",
-		"restart_required": true,
-	})
-}
-
-// updateEnvFile reads .env, updates the given key=value pairs, and writes it back.
-// Comments and blank lines are preserved. Keys not in the file are appended.
-func updateEnvFile(path string, updates map[string]string) error {
-	var lines []string
-
-	if f, err := os.Open(path); err == nil {
-		scanner := bufio.NewScanner(f)
-		for scanner.Scan() {
-			lines = append(lines, scanner.Text())
-		}
-		f.Close()
-	}
-
-	updated := make(map[string]bool)
-	for i, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
-			continue
-		}
-		parts := strings.SplitN(trimmed, "=", 2)
-		if len(parts) < 1 {
-			continue
-		}
-		key := strings.TrimSpace(parts[0])
-		if newVal, ok := updates[key]; ok {
-			lines[i] = key + "=" + newVal
-			updated[key] = true
-		}
-	}
-
-	// Append keys that weren't found in the file
-	for key, val := range updates {
-		if !updated[key] {
-			lines = append(lines, key+"="+val)
-		}
-	}
-
-	return os.WriteFile(path, []byte(strings.Join(lines, "\n")+"\n"), 0600)
+	c.JSON(http.StatusOK, gin.H{"message": "설정이 저장되었습니다."})
 }
 
 // GET /api/orders/feasibility?code=:code — 주문가능수량 및 주문가능금액 조회 (TTTC8908R)
@@ -531,7 +490,8 @@ func (h *Handler) GetVolumeRank(c *gin.Context) {
 	market := c.DefaultQuery("market", "J")
 	sort := c.DefaultQuery("sort", "0")
 	priceMin, priceMax := h.resolvePriceFilter(c)
-	items, err := agent.GetVolumeRank(c.Request.Context(), h.client, market, sort, priceMin, priceMax)
+	excludeCls := h.db.GetSetting(c.Request.Context(), "ranking_excl_cls")
+	items, err := agent.GetVolumeRank(c.Request.Context(), h.client, market, sort, priceMin, priceMax, excludeCls)
 	if err != nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": err.Error()})
 		return
@@ -546,7 +506,8 @@ func (h *Handler) GetVolumeRank(c *gin.Context) {
 func (h *Handler) GetStrengthRank(c *gin.Context) {
 	market := c.DefaultQuery("market", "0000")
 	priceMin, priceMax := h.resolvePriceFilter(c)
-	items, err := agent.GetStrengthRank(c.Request.Context(), h.client, market, priceMin, priceMax)
+	excludeCls := h.db.GetSetting(c.Request.Context(), "ranking_excl_cls")
+	items, err := agent.GetStrengthRank(c.Request.Context(), h.client, market, priceMin, priceMax, excludeCls)
 	if err != nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": err.Error()})
 		return
@@ -562,7 +523,8 @@ func (h *Handler) GetExecCountRank(c *gin.Context) {
 	market := c.DefaultQuery("market", "0000")
 	sort := c.DefaultQuery("sort", "0")
 	priceMin, priceMax := h.resolvePriceFilter(c)
-	items, err := agent.GetExecCountRank(c.Request.Context(), h.client, market, sort, priceMin, priceMax)
+	excludeCls := h.db.GetSetting(c.Request.Context(), "ranking_excl_cls")
+	items, err := agent.GetExecCountRank(c.Request.Context(), h.client, market, sort, priceMin, priceMax, excludeCls)
 	if err != nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": err.Error()})
 		return
@@ -579,7 +541,8 @@ func (h *Handler) GetDisparityRank(c *gin.Context) {
 	period := c.DefaultQuery("period", "20")
 	sort := c.DefaultQuery("sort", "0")
 	priceMin, priceMax := h.resolvePriceFilter(c)
-	items, err := agent.GetDisparityRank(c.Request.Context(), h.client, market, period, sort, priceMin, priceMax)
+	excludeCls := h.db.GetSetting(c.Request.Context(), "ranking_excl_cls")
+	items, err := agent.GetDisparityRank(c.Request.Context(), h.client, market, period, sort, priceMin, priceMax, excludeCls)
 	if err != nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": err.Error()})
 		return

@@ -1,6 +1,7 @@
 package database
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"os"
@@ -117,4 +118,21 @@ func (db *DB) migrate() error {
 	}
 
 	return nil
+}
+
+// GetSetting returns the value for the given key from the settings table.
+// Returns an empty string if the key does not exist.
+func (db *DB) GetSetting(ctx context.Context, key string) string {
+	var value string
+	db.QueryRowContext(ctx, "SELECT value FROM settings WHERE key = ?", key).Scan(&value) //nolint:errcheck
+	return value
+}
+
+// SetSetting upserts a key-value pair in the settings table.
+func (db *DB) SetSetting(ctx context.Context, key, value string) error {
+	_, err := db.ExecContext(ctx,
+		`INSERT INTO settings (key, value, updated_at) VALUES (?, ?, datetime('now'))
+		 ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+		key, value)
+	return err
 }
