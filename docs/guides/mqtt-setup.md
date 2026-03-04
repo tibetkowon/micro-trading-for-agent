@@ -37,16 +37,20 @@ sudo nano /etc/mosquitto/conf.d/trading.conf
 ```
 
 ```conf
-# 인증 없이 로컬에서만 접근 허용 (백엔드 → 브로커)
-listener 1883 localhost
+# Mosquitto 2.x에서 리스너별 인증을 분리하려면 반드시 필요
+per_listener_settings true
 
-# 외부 에이전트용 포트 (개인PC 접속)
+# 로컬 전용 — 익명 허용 (백엔드 → 브로커)
+listener 1883 localhost
+allow_anonymous true
+
+# 외부 에이전트용 포트 — 비밀번호 필수
 listener 1884 0.0.0.0
 allow_anonymous false
 password_file /etc/mosquitto/passwd
 ```
 
-> **보안 권장**: 외부 포트(1884)에는 비밀번호 인증을 적용한다. 가능하면 1883은 로컬 전용으로 유지한다.
+> **주의**: `per_listener_settings true` 없이 `allow_anonymous false`를 설정하면 1883 포트도 인증을 요구해 백엔드 MQTT 연결이 실패한다.
 
 ### 사용자 생성
 
