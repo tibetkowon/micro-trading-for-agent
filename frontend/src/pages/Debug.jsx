@@ -85,8 +85,6 @@ export default function Debug() {
   const [priceResult, setPriceResult] = useState(null)
   const [monLoading, setMonLoading] = useState(false)
   const [monResult, setMonResult] = useState(null)
-  const [liqLoading, setLiqLoading] = useState(false)
-  const [liqResult, setLiqResult] = useState(null)
 
   function addLog(ok, method, path, status, body) {
     const time = new Date().toLocaleTimeString()
@@ -149,11 +147,6 @@ export default function Debug() {
     }, setMonLoading, setMonResult)
   }
 
-  async function liquidate() {
-    if (!confirm('⚠ 실제 KIS 매도 API가 호출됩니다. 계속할까요?')) return
-    await call('POST', '/liquidate', null, setLiqLoading, setLiqResult)
-  }
-
   const wsLabel = wsStatus === null ? '알 수 없음' : wsStatus ? '연결됨' : '해제됨'
   const wsColor = wsStatus === null ? 'text-gray-500' : wsStatus ? 'text-green-400' : 'text-gray-500'
 
@@ -194,14 +187,6 @@ export default function Debug() {
           <ResultBadge result={priceResult} />
         </div>
         <p className="text-xs text-gray-600 mt-2">모니터링 중인 포지션의 목표/손절가를 초과하면 MQTT alert 발행</p>
-      </Section>
-
-      <Section title="LiquidateAll">
-        <p className="text-xs text-yellow-500 mb-3">⚠ 실제 KIS 매도 API 호출됨 — 장 외 시간에는 주문이 실패합니다</p>
-        <div className="flex items-center gap-3">
-          <Btn onClick={liquidate} variant="danger" loading={liqLoading}>청산 실행</Btn>
-          <ResultBadge result={liqResult} />
-        </div>
       </Section>
 
       <Section title="응답 로그">
