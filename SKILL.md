@@ -429,20 +429,3 @@ mosquitto_sub \
    → LIQUIDATION 수신: 장마감 청산 완료 → 일일 리포트 작성
 ```
 
----
-
-## 스킬 목록 (개발자용 행동 지침)
-
-| # | 스킬 파일 | 트리거 |
-|---|-----------|--------|
-| 1 | `.claude/skills/plan_feature.md` | 신규 기능 시작 전 |
-| 2 | `.claude/skills/verify_implementation.md` | 코드 수정 후, 커밋 전 |
-| 3 | `.claude/skills/record_changelog.md` | 구현 완료 후 |
-| 4 | `.claude/skills/write_code_tutor.md` | 주요 코드 작성 후 |
-| 5 | `.claude/skills/analyze_trade_logs.md` | KIS API 오류 조사 시 |
-| 6 | `.claude/skills/update_db_schema.md` | SQLite 스키마 변경 시 |
-| 7 | `.claude/skills/update_architecture.md` | 신규 패키지 추가 시 |
-| 8 | `.claude/skills/update_readme.md` | 주요 마일스톤 후 |
-| 9 | `.claude/skills/manage_skills.md` | 새 규칙·패턴 발견 시 |
-| 10 | `.claude/skills/implement_kis_feature.md` | KIS API 기능 구현 시 |
-| 11 | `.claude/skills/generate_openclaw_spec.md` | SKILL.md 갱신 시 |
