@@ -49,8 +49,8 @@ func main() {
 			logger.Warn("initial KIS token issue failed — API calls will fail until resolved",
 				map[string]any{"error": err.Error()})
 		}
-		tokenManager.StartAutoRefresh(ctx)
-		defer tokenManager.Stop()
+		// 토큰 갱신은 매일 08:50 market scheduler에서 WebSocket 연결과 함께 수행.
+		// 별도 20시간 타이머 없음.
 	} else {
 		logger.Warn("KIS_APP_KEY or KIS_APP_SECRET not set — running without KIS integration", nil)
 	}
@@ -101,7 +101,7 @@ func main() {
 
 	// --- Market hours scheduler ---
 	if cfg.KISAppKey != "" && cfg.KISAppSecret != "" && wsClient != nil {
-		go runMarketScheduler(ctx, cfg, kisClient, wsClient, mon)
+		go runMarketScheduler(ctx, kisClient, wsClient, mon, tokenManager)
 	}
 
 	// --- Price consumer ---
@@ -149,11 +149,12 @@ func main() {
 
 // runMarketScheduler manages WebSocket lifecycle based on KST market hours:
 //
-//	08:50 → fetch approval_key → connect → subscribe
+//	08:50 → issue fresh token → fetch approval_key → connect → subscribe
 //	15:15 → liquidate all positions → publish report
 //	16:00 → disconnect
-func runMarketScheduler(ctx context.Context, cfg *config.Config,
-	kisClient *kis.Client, wsClient *kis.WebSocketClient, mon *monitor.Monitor) {
+func runMarketScheduler(ctx context.Context,
+	kisClient *kis.Client, wsClient *kis.WebSocketClient, mon *monitor.Monitor,
+	tokenManager *kis.TokenManager) {
 
 	kst, _ := time.LoadLocation("Asia/Seoul")
 
@@ -176,7 +177,12 @@ func runMarketScheduler(ctx context.Context, cfg *config.Config,
 
 			switch {
 			case hhmm == 850 && !wsRunning:
-				// 08:50 — connect WebSocket
+				// 08:50 — issue fresh token + connect WebSocket
+				if _, err := tokenManager.IssueToken(ctx); err != nil {
+					logger.Error("08:50 token refresh failed", map[string]any{"error": err.Error()})
+				} else {
+					logger.Info("market scheduler: KIS token refreshed at 08:50", nil)
+				}
 				approvalKey, err := kisClient.GetApprovalKey(ctx)
 				if err != nil {
 					logger.Error("GetApprovalKey failed", map[string]any{"error": err.Error()})
