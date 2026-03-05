@@ -30,7 +30,9 @@ type AlertPayload struct {
 	TriggerPrice float64   `json:"trigger_price"`
 	TargetPrice  float64   `json:"target_price"`
 	StopPrice    float64   `json:"stop_price"`
-	ProfitPct    float64   `json:"profit_pct"`
+	SellQty      int       `json:"sell_qty"`      // 실제 매도 수량 (0=매도 미실행 또는 실패)
+	ProfitPct    float64   `json:"profit_pct"`    // 수익률 (%)
+	ProfitAmount float64   `json:"profit_amount"` // 실현 손익 금액 (KRW, 음수=손실)
 	Timestamp    time.Time `json:"timestamp"`
 	IsTest       bool      `json:"is_test"` // true이면 테스트 메시지 (장 외 디버그용)
 }
@@ -82,13 +84,16 @@ func (p *Publisher) Publish(topic string, payload any) error {
 	return nil
 }
 
-// PublishAlert publishes a position alert (TARGET_HIT / STOP_HIT).
-// isTest=true marks the message as a debug test (장 외 테스트용).
+// PublishAlert publishes a position alert (TARGET_HIT / STOP_HIT / LIQUIDATION).
+// sellQty: 실제 매도 수량 (0=미실행). isTest=true: 장 외 테스트용 메시지.
 func (p *Publisher) PublishAlert(event, stockCode, stockName string,
-	triggerPrice, targetPrice, stopPrice, filledPrice float64, isTest bool) {
+	triggerPrice, targetPrice, stopPrice, filledPrice float64,
+	sellQty int, isTest bool) {
 	profitPct := 0.0
+	profitAmount := 0.0
 	if filledPrice > 0 {
 		profitPct = (triggerPrice - filledPrice) / filledPrice * 100
+		profitAmount = (triggerPrice - filledPrice) * float64(sellQty)
 	}
 	payload := AlertPayload{
 		Event:        event,
@@ -97,7 +102,9 @@ func (p *Publisher) PublishAlert(event, stockCode, stockName string,
 		TriggerPrice: triggerPrice,
 		TargetPrice:  targetPrice,
 		StopPrice:    stopPrice,
+		SellQty:      sellQty,
 		ProfitPct:    profitPct,
+		ProfitAmount: profitAmount,
 		Timestamp:    time.Now().In(time.FixedZone("KST", 9*3600)),
 		IsTest:       isTest,
 	}

@@ -106,7 +106,7 @@ func (m *Monitor) Remove(ctx context.Context, stockCode string) {
 
 // HandlePrice evaluates a price update against registered positions.
 // Called by the WebSocket price event consumer goroutine.
-// isTest=true marks any resulting MQTT alert as a debug test message.
+// isTest=true: KIS 매도 주문을 건너뛰고 MQTT만 발행 (장 외 테스트용).
 func (m *Monitor) HandlePrice(stockCode string, price float64, isTest bool) {
 	m.mu.RLock()
 	pos, ok := m.positions[stockCode]
@@ -119,24 +119,72 @@ func (m *Monitor) HandlePrice(stockCode string, price float64, isTest bool) {
 	case price >= pos.TargetPrice:
 		logger.Info("monitor: TARGET hit",
 			map[string]any{"stock_code": stockCode, "price": price, "target": pos.TargetPrice})
+		sellQty := 0
+		if !isTest {
+			sellQty = m.executeSell(stockCode, pos)
+		}
 		if m.mqttPub != nil {
 			m.mqttPub.PublishAlert(mqttpkg.EventTargetHit,
 				pos.StockCode, pos.StockName, price,
-				pos.TargetPrice, pos.StopPrice, pos.FilledPrice, isTest)
+				pos.TargetPrice, pos.StopPrice, pos.FilledPrice, sellQty, isTest)
 		}
-		// Remove from monitoring after alert; agent decides next action.
 		m.Remove(context.Background(), stockCode)
 
 	case price <= pos.StopPrice:
 		logger.Info("monitor: STOP hit",
 			map[string]any{"stock_code": stockCode, "price": price, "stop": pos.StopPrice})
+		sellQty := 0
+		if !isTest {
+			sellQty = m.executeSell(stockCode, pos)
+		}
 		if m.mqttPub != nil {
 			m.mqttPub.PublishAlert(mqttpkg.EventStopHit,
 				pos.StockCode, pos.StockName, price,
-				pos.TargetPrice, pos.StopPrice, pos.FilledPrice, isTest)
+				pos.TargetPrice, pos.StopPrice, pos.FilledPrice, sellQty, isTest)
 		}
 		m.Remove(context.Background(), stockCode)
 	}
+}
+
+// executeSell places a market sell order for the given position and returns the qty sold.
+// Returns 0 if holdings lookup fails, qty is 0, or sell order fails.
+func (m *Monitor) executeSell(stockCode string, pos *MonitoredEntry) int {
+	ctx := context.Background()
+
+	holdings, err := m.kisClient.GetHoldings(ctx)
+	if err != nil {
+		logger.Error("auto-sell: GetHoldings failed",
+			map[string]any{"stock_code": stockCode, "error": err.Error()})
+		return 0
+	}
+
+	qty := 0
+	for _, h := range holdings {
+		if h.StockCode == stockCode {
+			fmt.Sscanf(h.HoldingQty, "%d", &qty)
+			break
+		}
+	}
+	if qty <= 0 {
+		logger.Info("auto-sell: no holdings found", map[string]any{"stock_code": stockCode})
+		return 0
+	}
+
+	_, err = m.kisClient.PlaceSellOrder(ctx, kis.OrderRequest{
+		StockCode: stockCode,
+		OrderDivn: "01", // 시장가
+		Qty:       fmt.Sprintf("%d", qty),
+		Price:     "0",
+	})
+	if err != nil {
+		logger.Error("auto-sell: PlaceSellOrder failed",
+			map[string]any{"stock_code": stockCode, "qty": qty, "error": err.Error()})
+		return 0
+	}
+
+	logger.Info("auto-sell: sell order placed",
+		map[string]any{"stock_code": stockCode, "qty": qty, "filled_price": pos.FilledPrice})
+	return qty
 }
 
 // LiquidateAll places market sell orders for all monitored positions (15:15 장마감).
@@ -171,9 +219,11 @@ func (m *Monitor) LiquidateAll(ctx context.Context) {
 		}
 
 		qty := 0
+		var currentPrice float64
 		for _, h := range holdings {
 			if h.StockCode == code {
 				fmt.Sscanf(h.HoldingQty, "%d", &qty)
+				fmt.Sscanf(h.CurrentPrice, "%f", &currentPrice)
 				break
 			}
 		}
@@ -182,6 +232,7 @@ func (m *Monitor) LiquidateAll(ctx context.Context) {
 			continue
 		}
 
+		sellQty := 0
 		_, err = m.kisClient.PlaceSellOrder(ctx, kis.OrderRequest{
 			StockCode: code,
 			OrderDivn: "01", // 시장가
@@ -192,14 +243,16 @@ func (m *Monitor) LiquidateAll(ctx context.Context) {
 			logger.Error("liquidate: sell order failed",
 				map[string]any{"stock_code": code, "error": err.Error()})
 		} else {
+			sellQty = qty
 			logger.Info("liquidate: sell order placed",
 				map[string]any{"stock_code": code, "qty": qty})
 		}
 
 		if m.mqttPub != nil {
+			// triggerPrice = 청산 시점 현재가 (시장가 매도의 근사 체결가)
 			m.mqttPub.PublishAlert(mqttpkg.EventLiquidation,
-				pos.StockCode, pos.StockName, 0,
-				pos.TargetPrice, pos.StopPrice, pos.FilledPrice, false)
+				pos.StockCode, pos.StockName, currentPrice,
+				pos.TargetPrice, pos.StopPrice, pos.FilledPrice, sellQty, false)
 		}
 
 		m.Remove(ctx, code)

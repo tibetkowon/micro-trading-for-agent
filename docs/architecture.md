@@ -1,6 +1,6 @@
 # Project Architecture
 
-> Last updated: 2026-03-04 (rev 5 — Phase 1: WebSocket + Monitor + MQTT)
+> Last updated: 2026-03-05 (rev 6 — 목표/손절 자동 매도 + MQTT 페이로드 개선)
 
 ## Directory Tree
 
@@ -118,7 +118,7 @@ micro-trading-for-agent/
 
 ### `backend/internal/monitor`
 - **Role:** 보유 포지션 실시간 모니터링 (목표가/손절가 비교).
-- **`monitor.go`** — `Register()`/`Remove()` 포지션 관리, `HandlePrice()` 가격 이벤트 처리, `LiquidateAll()` 장마감 전량 청산, DB 영속화 + 서버 재시작 복구
+- **`monitor.go`** — `Register()`/`Remove()` 포지션 관리, `HandlePrice()` 가격 이벤트 처리 + KIS 자동 매도, `executeSell()` 시장가 매도 실행, `LiquidateAll()` 장마감 전량 청산, DB 영속화 + 서버 재시작 복구
 
 ### `backend/internal/agent`
 - **Role:** AI 에이전트 액션 함수. KIS API 데이터와 DB 영속성을 연결하는 거래 루프의 핵심.
@@ -143,9 +143,20 @@ micro-trading-for-agent/
 KIS WebSocket (H0STCNT0)
   ↓ PriceCh (buffered channel, 256)
 monitor.StartPriceConsumer()
-  ↓ HandlePrice()
-  ├─ price ≥ TargetPrice → mqtt.PublishAlert(TARGET_HIT) → monitor.Remove()
-  └─ price ≤ StopPrice  → mqtt.PublishAlert(STOP_HIT)  → monitor.Remove()
+  ↓ HandlePrice(isTest=false)
+  ├─ price ≥ TargetPrice → executeSell() → KIS 시장가 매도
+  │                      → mqtt.PublishAlert(TARGET_HIT, sell_qty, profit_amount)
+  │                      → monitor.Remove()
+  └─ price ≤ StopPrice  → executeSell() → KIS 시장가 매도
+                         → mqtt.PublishAlert(STOP_HIT, sell_qty, profit_amount)
+                         → monitor.Remove()
+
+  HandlePrice(isTest=true) — 장 외 디버그:
+  ├─ KIS 매도 스킵
+  └─ mqtt.PublishAlert(..., sell_qty=0, is_test=true)
+
+15:15 LiquidateAll():
+  └─ GetHoldings → PlaceSellOrder(시장가) → mqtt.PublishAlert(LIQUIDATION, sell_qty, profit_amount, trigger_price=현재가)
 ```
 
 ## API Endpoint Map

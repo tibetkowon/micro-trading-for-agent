@@ -147,7 +147,7 @@ npm run dev
 | **15:15 KST** | 모니터링 중인 포지션 전량 시장가 청산 | 평일 |
 | **16:00 KST** | WebSocket 연결 해제 | 평일 |
 | 5분 주기 | Order Sync (KIS 체결 내역 → DB 동기화) | 장 중에만 |
-| 20시간 주기 | KIS 액세스 토큰 자동 갱신 | 항상 |
+| **08:50 KST** | KIS 액세스 토큰 갱신 (WebSocket 연결과 동시) | 평일 |
 
 ---
 
@@ -155,14 +155,16 @@ npm run dev
 
 ```
 에이전트 → POST /api/orders {target_pct: 3.0, stop_pct: 2.0}
-         → KIS 주문 접수
+         → KIS 매수 주문
          → monitor.Register(target=price×1.03, stop=price×0.98)
 
 KIS WebSocket (H0STCNT0 체결가)
-  현재가 ≥ 목표가 → MQTT "trading/alert/005930" TARGET_HIT
-  현재가 ≤ 손절가 → MQTT "trading/alert/005930" STOP_HIT
+  현재가 ≥ 목표가 → KIS 시장가 매도 → MQTT TARGET_HIT {sell_qty, profit_amount}
+  현재가 ≤ 손절가 → KIS 시장가 매도 → MQTT STOP_HIT  {sell_qty, profit_amount}
+  → 에이전트 수신: sell_qty>0 확인 후 새 종목 탐색 재개
 
-15:15 → 전량 청산 → MQTT "trading/liquidation" LIQUIDATION
+15:15 → 전량 시장가 청산 → MQTT LIQUIDATION {sell_qty, profit_amount, trigger_price=현재가}
+  → 에이전트 수신: 일일 리포트 작성
 ```
 
 MQTT 설치 및 에이전트 연동 방법: [`docs/guides/mqtt-setup.md`](docs/guides/mqtt-setup.md)
