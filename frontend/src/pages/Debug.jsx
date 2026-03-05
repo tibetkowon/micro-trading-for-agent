@@ -35,16 +35,16 @@ Input.propTypes = {
   type: PropTypes.string,
 }
 
-function Btn({ onClick, children, variant = 'default', disabled = false }) {
-  const base = 'px-4 py-1.5 rounded text-sm font-medium transition-colors disabled:opacity-40'
+function Btn({ onClick, children, variant = 'default', disabled = false, loading = false }) {
+  const base = 'px-4 py-1.5 rounded text-sm font-medium transition-colors disabled:opacity-40 min-w-[80px]'
   const variants = {
     default: 'bg-blue-600 hover:bg-blue-700 text-white',
     danger: 'bg-red-700 hover:bg-red-800 text-white',
     gray: 'bg-gray-700 hover:bg-gray-600 text-white',
   }
   return (
-    <button className={`${base} ${variants[variant]}`} onClick={onClick} disabled={disabled}>
-      {children}
+    <button className={`${base} ${variants[variant]}`} onClick={onClick} disabled={disabled || loading}>
+      {loading ? '처리 중...' : children}
     </button>
   )
 }
@@ -53,10 +53,22 @@ Btn.propTypes = {
   children: PropTypes.node,
   variant: PropTypes.string,
   disabled: PropTypes.bool,
+  loading: PropTypes.bool,
 }
 
+function ResultBadge({ result }) {
+  if (!result) return null
+  const ok = result.ok
+  return (
+    <span className={`text-xs px-2 py-0.5 rounded font-medium ${ok ? 'bg-green-900 text-green-300' : 'bg-red-900 text-red-300'}`}>
+      {ok ? '✓ 성공' : '✗ 실패'} {result.message && `— ${result.message}`}
+    </span>
+  )
+}
+ResultBadge.propTypes = { result: PropTypes.object }
+
 export default function Debug() {
-  const [wsStatus, setWsStatus] = useState(null) // null | true | false
+  const [wsStatus, setWsStatus] = useState(null)
   const [priceCode, setPriceCode] = useState('')
   const [priceValue, setPriceValue] = useState('')
   const [monCode, setMonCode] = useState('')
@@ -65,24 +77,38 @@ export default function Debug() {
   const [monTarget, setMonTarget] = useState('')
   const [monStop, setMonStop] = useState('')
   const [logs, setLogs] = useState([])
-  const [loading, setLoading] = useState(false)
 
-  function addLog(method, path, status, body) {
-    const entry = `${new Date().toLocaleTimeString()} ${method} ${path}\n< ${status} ${JSON.stringify(body, null, 2)}`
+  // 섹션별 로딩/결과 상태
+  const [wsLoading, setWsLoading] = useState(false)
+  const [wsResult, setWsResult] = useState(null)
+  const [priceLoading, setPriceLoading] = useState(false)
+  const [priceResult, setPriceResult] = useState(null)
+  const [monLoading, setMonLoading] = useState(false)
+  const [monResult, setMonResult] = useState(null)
+  const [liqLoading, setLiqLoading] = useState(false)
+  const [liqResult, setLiqResult] = useState(null)
+
+  function addLog(ok, method, path, status, body) {
+    const time = new Date().toLocaleTimeString()
+    const entry = { ok, text: `${time} ${method} ${path}\n< ${status} ${JSON.stringify(body, null, 2)}` }
     setLogs(prev => [entry, ...prev].slice(0, 30))
   }
 
-  async function call(method, path, body) {
+  async function call(method, path, body, setLoading, setResult) {
     setLoading(true)
+    setResult(null)
     try {
       const opts = { method, headers: { 'Content-Type': 'application/json' } }
       if (body) opts.body = JSON.stringify(body)
       const res = await fetch(`${API}${path}`, opts)
       const data = await res.json().catch(() => ({}))
-      addLog(method, `${API}${path}`, res.status, data)
+      addLog(res.ok, method, `${API}${path}`, res.status, data)
+      const message = data.message || data.error || ''
+      setResult({ ok: res.ok, message })
       return { ok: res.ok, data }
     } catch (e) {
-      addLog(method, `${API}${path}`, 'ERR', { error: e.message })
+      addLog(false, method, `${API}${path}`, 'ERR', { error: e.message })
+      setResult({ ok: false, message: e.message })
       return { ok: false }
     } finally {
       setLoading(false)
@@ -90,34 +116,42 @@ export default function Debug() {
   }
 
   async function wsConnect() {
-    const r = await call('POST', '/ws')
+    const r = await call('POST', '/ws', null, setWsLoading, setWsResult)
     if (r.ok) setWsStatus(true)
   }
 
   async function wsDisconnect() {
-    const r = await call('DELETE', '/ws')
+    const r = await call('DELETE', '/ws', null, setWsLoading, setWsResult)
     if (r.ok) setWsStatus(false)
   }
 
   async function injectPrice() {
-    if (!priceCode || !priceValue) return
-    await call('POST', '/price', { stock_code: priceCode, price: parseFloat(priceValue) })
+    if (!priceCode || !priceValue) {
+      setPriceResult({ ok: false, message: '종목코드와 가격을 입력하세요' })
+      return
+    }
+    await call('POST', '/price',
+      { stock_code: priceCode, price: parseFloat(priceValue) },
+      setPriceLoading, setPriceResult)
   }
 
   async function registerMonitor() {
-    if (!monCode || !monName || !monFilled || !monTarget || !monStop) return
+    if (!monCode || !monName || !monFilled || !monTarget || !monStop) {
+      setMonResult({ ok: false, message: '모든 항목을 입력하세요' })
+      return
+    }
     await call('POST', '/monitor', {
       stock_code: monCode,
       stock_name: monName,
       filled_price: parseFloat(monFilled),
       target_pct: parseFloat(monTarget),
       stop_pct: parseFloat(monStop),
-    })
+    }, setMonLoading, setMonResult)
   }
 
   async function liquidate() {
     if (!confirm('⚠ 실제 KIS 매도 API가 호출됩니다. 계속할까요?')) return
-    await call('POST', '/liquidate')
+    await call('POST', '/liquidate', null, setLiqLoading, setLiqResult)
   }
 
   const wsLabel = wsStatus === null ? '알 수 없음' : wsStatus ? '연결됨' : '해제됨'
@@ -128,10 +162,11 @@ export default function Debug() {
       <h1 className="text-xl font-bold text-white mb-6">Debug 패널 (장 외 테스트용)</h1>
 
       <Section title="WebSocket 제어">
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3 flex-wrap">
           <span className={`text-sm font-medium ${wsColor}`}>● {wsLabel}</span>
-          <Btn onClick={wsConnect} disabled={loading}>연결</Btn>
-          <Btn onClick={wsDisconnect} variant="gray" disabled={loading}>해제</Btn>
+          <Btn onClick={wsConnect} loading={wsLoading}>연결</Btn>
+          <Btn onClick={wsDisconnect} variant="gray" loading={wsLoading}>해제</Btn>
+          <ResultBadge result={wsResult} />
         </div>
       </Section>
 
@@ -143,7 +178,10 @@ export default function Debug() {
           <Input label="목표 (%)" value={monTarget} onChange={setMonTarget} placeholder="3.0" type="number" />
           <Input label="손절 (%)" value={monStop} onChange={setMonStop} placeholder="2.0" type="number" />
         </div>
-        <Btn onClick={registerMonitor} disabled={loading}>등록</Btn>
+        <div className="flex items-center gap-3">
+          <Btn onClick={registerMonitor} loading={monLoading}>등록</Btn>
+          <ResultBadge result={monResult} />
+        </div>
       </Section>
 
       <Section title="가격 이벤트 주입 → MQTT is_test:true">
@@ -151,22 +189,34 @@ export default function Debug() {
           <Input label="종목코드" value={priceCode} onChange={setPriceCode} placeholder="005930" />
           <Input label="가격" value={priceValue} onChange={setPriceValue} placeholder="72100" type="number" />
         </div>
-        <Btn onClick={injectPrice} disabled={loading}>주입</Btn>
+        <div className="flex items-center gap-3">
+          <Btn onClick={injectPrice} loading={priceLoading}>주입</Btn>
+          <ResultBadge result={priceResult} />
+        </div>
         <p className="text-xs text-gray-600 mt-2">모니터링 중인 포지션의 목표/손절가를 초과하면 MQTT alert 발행</p>
       </Section>
 
       <Section title="LiquidateAll">
         <p className="text-xs text-yellow-500 mb-3">⚠ 실제 KIS 매도 API 호출됨 — 장 외 시간에는 주문이 실패합니다</p>
-        <Btn onClick={liquidate} variant="danger" disabled={loading}>청산 실행</Btn>
+        <div className="flex items-center gap-3">
+          <Btn onClick={liquidate} variant="danger" loading={liqLoading}>청산 실행</Btn>
+          <ResultBadge result={liqResult} />
+        </div>
       </Section>
 
       <Section title="응답 로그">
-        {logs.length === 0 && <p className="text-xs text-gray-600">응답이 여기에 표시됩니다.</p>}
-        <div className="space-y-2 max-h-80 overflow-y-auto">
-          {logs.map((log, i) => (
-            <pre key={i} className="text-xs text-green-400 bg-black/40 rounded p-2 whitespace-pre-wrap">{log}</pre>
-          ))}
-        </div>
+        {logs.length === 0
+          ? <p className="text-xs text-gray-600">버튼을 누르면 응답이 여기에 표시됩니다.</p>
+          : (
+            <div className="space-y-2 max-h-80 overflow-y-auto">
+              {logs.map((log, i) => (
+                <pre key={i} className={`text-xs rounded p-2 whitespace-pre-wrap ${log.ok ? 'text-green-400 bg-green-950/30' : 'text-red-400 bg-red-950/30'}`}>
+                  {log.text}
+                </pre>
+              ))}
+            </div>
+          )
+        }
       </Section>
     </div>
   )
