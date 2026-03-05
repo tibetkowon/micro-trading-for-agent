@@ -588,3 +588,101 @@ func (h *Handler) DebugRawBalance(c *gin.Context) {
 	}
 	c.Data(http.StatusOK, "application/json", raw)
 }
+
+// POST /api/debug/ws — WebSocket 수동 연결 (approval key 발급 후 StartWithReconnect)
+func (h *Handler) DebugWSConnect(c *gin.Context) {
+	if h.wsClient == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "WebSocket 클라이언트가 초기화되지 않았습니다"})
+		return
+	}
+	if h.wsClient.IsConnected() {
+		c.JSON(http.StatusOK, gin.H{"message": "이미 연결되어 있습니다"})
+		return
+	}
+	key, err := h.client.GetApprovalKey(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "approval key 발급 실패: " + err.Error()})
+		return
+	}
+	h.wsClient.SetApprovalKey(key)
+	go h.wsClient.StartWithReconnect(context.Background())
+	c.JSON(http.StatusOK, gin.H{"message": "WebSocket 연결 시작"})
+}
+
+// DELETE /api/debug/ws — WebSocket 수동 해제
+func (h *Handler) DebugWSDisconnect(c *gin.Context) {
+	if h.wsClient == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "WebSocket 클라이언트가 초기화되지 않았습니다"})
+		return
+	}
+	h.wsClient.Disconnect()
+	c.JSON(http.StatusOK, gin.H{"message": "WebSocket 해제"})
+}
+
+// POST /api/debug/price — 가짜 가격 이벤트 주입 → Monitor.HandlePrice() (is_test: true)
+// Body: {"stock_code": "005930", "price": 73500}
+func (h *Handler) DebugInjectPrice(c *gin.Context) {
+	var req struct {
+		StockCode string  `json:"stock_code" binding:"required"`
+		Price     float64 `json:"price" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if h.monitor == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "모니터가 초기화되지 않았습니다"})
+		return
+	}
+	h.monitor.HandlePrice(req.StockCode, req.Price, true)
+	c.JSON(http.StatusOK, gin.H{"stock_code": req.StockCode, "price": req.Price})
+}
+
+// POST /api/debug/monitor — KIS 주문 없이 모니터 포지션 직접 등록
+// Body: {"stock_code":"005930","stock_name":"삼성전자","filled_price":70000,"target_pct":3.0,"stop_pct":2.0}
+func (h *Handler) DebugRegisterMonitor(c *gin.Context) {
+	var req struct {
+		StockCode   string  `json:"stock_code" binding:"required"`
+		StockName   string  `json:"stock_name" binding:"required"`
+		FilledPrice float64 `json:"filled_price" binding:"required"`
+		TargetPct   float64 `json:"target_pct" binding:"required"`
+		StopPct     float64 `json:"stop_pct" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if h.monitor == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "모니터가 초기화되지 않았습니다"})
+		return
+	}
+	entry := monitor.MonitoredEntry{
+		StockCode:   req.StockCode,
+		StockName:   req.StockName,
+		FilledPrice: req.FilledPrice,
+		TargetPrice: req.FilledPrice * (1 + req.TargetPct/100),
+		StopPrice:   req.FilledPrice * (1 - req.StopPct/100),
+		OrderID:     0,
+	}
+	if err := h.monitor.Register(c.Request.Context(), entry); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusCreated, gin.H{
+		"stock_code":   entry.StockCode,
+		"stock_name":   entry.StockName,
+		"filled_price": entry.FilledPrice,
+		"target_price": entry.TargetPrice,
+		"stop_price":   entry.StopPrice,
+	})
+}
+
+// POST /api/debug/liquidate — LiquidateAll 수동 트리거 (실제 KIS 매도 API 호출됨)
+func (h *Handler) DebugLiquidate(c *gin.Context) {
+	if h.monitor == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "모니터가 초기화되지 않았습니다"})
+		return
+	}
+	go h.monitor.LiquidateAll(context.Background())
+	c.JSON(http.StatusOK, gin.H{"message": "청산 시작 (비동기 실행)"})
+}

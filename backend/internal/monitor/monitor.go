@@ -106,7 +106,8 @@ func (m *Monitor) Remove(ctx context.Context, stockCode string) {
 
 // HandlePrice evaluates a price update against registered positions.
 // Called by the WebSocket price event consumer goroutine.
-func (m *Monitor) HandlePrice(stockCode string, price float64) {
+// isTest=true marks any resulting MQTT alert as a debug test message.
+func (m *Monitor) HandlePrice(stockCode string, price float64, isTest bool) {
 	m.mu.RLock()
 	pos, ok := m.positions[stockCode]
 	m.mu.RUnlock()
@@ -121,7 +122,7 @@ func (m *Monitor) HandlePrice(stockCode string, price float64) {
 		if m.mqttPub != nil {
 			m.mqttPub.PublishAlert(mqttpkg.EventTargetHit,
 				pos.StockCode, pos.StockName, price,
-				pos.TargetPrice, pos.StopPrice, pos.FilledPrice)
+				pos.TargetPrice, pos.StopPrice, pos.FilledPrice, isTest)
 		}
 		// Remove from monitoring after alert; agent decides next action.
 		m.Remove(context.Background(), stockCode)
@@ -132,7 +133,7 @@ func (m *Monitor) HandlePrice(stockCode string, price float64) {
 		if m.mqttPub != nil {
 			m.mqttPub.PublishAlert(mqttpkg.EventStopHit,
 				pos.StockCode, pos.StockName, price,
-				pos.TargetPrice, pos.StopPrice, pos.FilledPrice)
+				pos.TargetPrice, pos.StopPrice, pos.FilledPrice, isTest)
 		}
 		m.Remove(context.Background(), stockCode)
 	}
@@ -198,7 +199,7 @@ func (m *Monitor) LiquidateAll(ctx context.Context) {
 		if m.mqttPub != nil {
 			m.mqttPub.PublishAlert(mqttpkg.EventLiquidation,
 				pos.StockCode, pos.StockName, 0,
-				pos.TargetPrice, pos.StopPrice, pos.FilledPrice)
+				pos.TargetPrice, pos.StopPrice, pos.FilledPrice, false)
 		}
 
 		m.Remove(ctx, code)
@@ -279,7 +280,7 @@ func (m *Monitor) StartPriceConsumer(ctx context.Context) {
 			if !ok {
 				return
 			}
-			m.HandlePrice(ev.StockCode, ev.Price)
+			m.HandlePrice(ev.StockCode, ev.Price, false)
 		}
 	}
 }

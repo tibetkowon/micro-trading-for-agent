@@ -4,6 +4,7 @@ import Orders from './pages/Orders'
 import Monitor from './pages/Monitor'
 import KISLogs from './pages/KISLogs'
 import Settings from './pages/Settings'
+import Debug from './pages/Debug'
 
 const navClass = ({ isActive }) =>
   `px-4 py-2 rounded text-sm font-medium transition-colors ${
@@ -22,6 +23,7 @@ export default function App() {
         <NavLink to="/orders" className={navClass}>주문 내역</NavLink>
         <NavLink to="/logs" className={navClass}>KIS 에러 로그</NavLink>
         <NavLink to="/settings" className={navClass}>설정</NavLink>
+        <NavLink to="/debug" className={navClass}>디버그</NavLink>
       </nav>
       <main className="flex-1 p-6">
         <Routes>
@@ -30,6 +32,7 @@ export default function App() {
           <Route path="/orders" element={<Orders />} />
           <Route path="/logs" element={<KISLogs />} />
           <Route path="/settings" element={<Settings />} />
+          <Route path="/debug" element={<Debug />} />
         </Routes>
       </main>
     </div>

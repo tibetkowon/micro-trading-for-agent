@@ -32,6 +32,7 @@ type AlertPayload struct {
 	StopPrice    float64   `json:"stop_price"`
 	ProfitPct    float64   `json:"profit_pct"`
 	Timestamp    time.Time `json:"timestamp"`
+	IsTest       bool      `json:"is_test"` // true이면 테스트 메시지 (장 외 디버그용)
 }
 
 // Publisher wraps a Paho MQTT client for fire-and-forget publishing.
@@ -82,8 +83,9 @@ func (p *Publisher) Publish(topic string, payload any) error {
 }
 
 // PublishAlert publishes a position alert (TARGET_HIT / STOP_HIT).
+// isTest=true marks the message as a debug test (장 외 테스트용).
 func (p *Publisher) PublishAlert(event, stockCode, stockName string,
-	triggerPrice, targetPrice, stopPrice, filledPrice float64) {
+	triggerPrice, targetPrice, stopPrice, filledPrice float64, isTest bool) {
 	profitPct := 0.0
 	if filledPrice > 0 {
 		profitPct = (triggerPrice - filledPrice) / filledPrice * 100
@@ -97,6 +99,7 @@ func (p *Publisher) PublishAlert(event, stockCode, stockName string,
 		StopPrice:    stopPrice,
 		ProfitPct:    profitPct,
 		Timestamp:    time.Now().In(time.FixedZone("KST", 9*3600)),
+		IsTest:       isTest,
 	}
 	topic := fmt.Sprintf("%s/%s", TopicAlert, stockCode)
 	if err := p.Publish(topic, payload); err != nil {

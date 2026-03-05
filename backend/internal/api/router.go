@@ -30,9 +30,18 @@ func SetupRouter(h *Handler, frontendDist string) *gin.Engine {
 		api.DELETE("/logs/kis/:id", h.DeleteKISLog)
 		api.GET("/settings", h.GetSettings)
 		api.PATCH("/settings", h.UpdateSettings)
-		api.GET("/debug/balance", h.DebugRawBalance)
 
 		api.GET("/server/status", h.GetServerStatus)
+
+		debug := api.Group("/debug")
+		{
+			debug.GET("/balance", h.DebugRawBalance)
+			debug.POST("/ws", h.DebugWSConnect)
+			debug.DELETE("/ws", h.DebugWSDisconnect)
+			debug.POST("/price", h.DebugInjectPrice)
+			debug.POST("/monitor", h.DebugRegisterMonitor)
+			debug.POST("/liquidate", h.DebugLiquidate)
+		}
 
 		monitorGroup := api.Group("/monitor")
 		{
