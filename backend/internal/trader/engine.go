@@ -20,11 +20,11 @@ import (
 type EngineState string
 
 const (
-	StateIdle         EngineState = "IDLE"
-	StateSelecting    EngineState = "SELECTING"
-	StateOrdering     EngineState = "ORDERING"
-	StateWaitingFill  EngineState = "WAITING_FILL"
-	StateMonitoring   EngineState = "MONITORING"
+	StateIdle        EngineState = "IDLE"
+	StateSelecting   EngineState = "SELECTING"
+	StateOrdering    EngineState = "ORDERING"
+	StateWaitingFill EngineState = "WAITING_FILL"
+	StateMonitoring  EngineState = "MONITORING"
 )
 
 // Engine runs autonomous trading cycles: select → order → monitor → repeat.

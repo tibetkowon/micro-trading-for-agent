@@ -406,16 +406,16 @@ func (h *Handler) GetSettings(c *gin.Context) {
 	ts, _ := h.db.GetTradingSettings(c.Request.Context())
 
 	c.JSON(http.StatusOK, gin.H{
-		"account_no":        maskedAccount,
-		"account_type":      h.cfg.KISAccountType,
-		"kis_configured":    h.cfg.KISAppKey != "" && h.cfg.KISAppSecret != "",
-		"hts_id_configured": h.cfg.KISHTSID != "",
+		"account_no":           maskedAccount,
+		"account_type":         h.cfg.KISAccountType,
+		"kis_configured":       h.cfg.KISAppKey != "" && h.cfg.KISAppSecret != "",
+		"hts_id_configured":    h.cfg.KISHTSID != "",
 		"anthropic_configured": h.cfg.AnthropicAPIKey != "",
-		"mqtt_broker_url":   h.cfg.MQTTBrokerURL,
-		"mqtt_client_id":    h.cfg.MQTTClientID,
-		"ws_connected":      wsConnected,
-		"trading_enabled":   tradingEnabled,
-		"ranking_excl_cls":  rankingExclCls,
+		"mqtt_broker_url":      h.cfg.MQTTBrokerURL,
+		"mqtt_client_id":       h.cfg.MQTTClientID,
+		"ws_connected":         wsConnected,
+		"trading_enabled":      tradingEnabled,
+		"ranking_excl_cls":     rankingExclCls,
 		// Autonomous trading settings
 		"take_profit_pct":              ts.TakeProfitPct,
 		"stop_loss_pct":                ts.StopLossPct,
@@ -435,7 +435,7 @@ func (h *Handler) GetSettings(c *gin.Context) {
 // PATCH /api/settings — 런타임 설정 업데이트
 func (h *Handler) UpdateSettings(c *gin.Context) {
 	var req struct {
-		TradingEnabled *bool `json:"trading_enabled"`
+		TradingEnabled *bool  `json:"trading_enabled"`
 		RankingExclCls string `json:"ranking_excl_cls"`
 		// Autonomous trading settings (all optional)
 		TakeProfitPct             *float64 `json:"take_profit_pct"`
