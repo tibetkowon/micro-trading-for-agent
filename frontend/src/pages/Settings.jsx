@@ -45,6 +45,20 @@ const EXCL_LABELS = [
   'ETN',
 ]
 
+const RANKING_TYPES = [
+  { value: 'volume', label: '거래량 순위' },
+  { value: 'strength', label: '체결강도 순위' },
+  { value: 'exec_count', label: '대량체결 순위' },
+  { value: 'disparity', label: '이격도 순위' },
+]
+
+const SELL_CONDITIONS = [
+  { value: 'target_pct', label: '목표가 도달 (WebSocket 실시간)' },
+  { value: 'stop_pct', label: '손절가 도달 (WebSocket 실시간)' },
+  { value: 'rsi_overbought', label: 'RSI 과매수' },
+  { value: 'macd_bearish', label: 'MACD 데드크로스' },
+]
+
 export default function Settings() {
   const { data, loading, error, refetch } = useApi('/api/settings')
 
@@ -52,6 +66,20 @@ export default function Settings() {
   const [tradingEnabled, setTradingEnabled] = useState(true)
   // 10개 체크박스 (각 index = 해당 비트, true = 제외)
   const [exclBits, setExclBits] = useState(Array(10).fill(true))
+
+  // Autonomous trading settings
+  const [takeProfitPct, setTakeProfitPct] = useState('3.0')
+  const [stopLossPct, setStopLossPct] = useState('2.0')
+  const [rankingTypes, setRankingTypes] = useState(['volume', 'strength', 'exec_count', 'disparity'])
+  const [rankingPriceMin, setRankingPriceMin] = useState('5000')
+  const [rankingPriceMax, setRankingPriceMax] = useState('100000')
+  const [maxPositions, setMaxPositions] = useState('1')
+  const [orderAmountPct, setOrderAmountPct] = useState('95')
+  const [sellConditions, setSellConditions] = useState(['target_pct', 'stop_pct'])
+  const [indicatorIntervalMin, setIndicatorIntervalMin] = useState('5')
+  const [rsiThreshold, setRsiThreshold] = useState('70')
+  const [macdBearish, setMacdBearish] = useState(false)
+  const [claudeModel, setClaudeModel] = useState('claude-sonnet-4-6')
 
   const [saving, setSaving] = useState(false)
   const [saveResult, setSaveResult] = useState(null)
@@ -62,10 +90,35 @@ export default function Settings() {
     setTradingEnabled(data.trading_enabled !== false)
     const cls = data.ranking_excl_cls || '1111111111'
     setExclBits(cls.split('').map((ch) => ch === '1'))
+
+    if (data.take_profit_pct != null) setTakeProfitPct(String(data.take_profit_pct))
+    if (data.stop_loss_pct != null) setStopLossPct(String(data.stop_loss_pct))
+    if (Array.isArray(data.ranking_types)) setRankingTypes(data.ranking_types)
+    if (data.ranking_price_min) setRankingPriceMin(data.ranking_price_min)
+    if (data.ranking_price_max) setRankingPriceMax(data.ranking_price_max)
+    if (data.max_positions != null) setMaxPositions(String(data.max_positions))
+    if (data.order_amount_pct != null) setOrderAmountPct(String(data.order_amount_pct))
+    if (Array.isArray(data.sell_conditions)) setSellConditions(data.sell_conditions)
+    if (data.indicator_check_interval_min != null) setIndicatorIntervalMin(String(data.indicator_check_interval_min))
+    if (data.indicator_rsi_sell_threshold != null) setRsiThreshold(String(data.indicator_rsi_sell_threshold))
+    if (data.indicator_macd_bearish_sell != null) setMacdBearish(data.indicator_macd_bearish_sell)
+    if (data.claude_model) setClaudeModel(data.claude_model)
   }, [data])
 
   function toggleBit(i) {
     setExclBits((prev) => prev.map((v, idx) => (idx === i ? !v : v)))
+  }
+
+  function toggleRankingType(val) {
+    setRankingTypes((prev) =>
+      prev.includes(val) ? prev.filter((v) => v !== val) : [...prev, val]
+    )
+  }
+
+  function toggleSellCondition(val) {
+    setSellConditions((prev) =>
+      prev.includes(val) ? prev.filter((v) => v !== val) : [...prev, val]
+    )
   }
 
   async function handleSave(e) {
@@ -77,6 +130,18 @@ export default function Settings() {
     const body = {
       trading_enabled: tradingEnabled,
       ranking_excl_cls: rankingExclCls,
+      take_profit_pct: parseFloat(takeProfitPct) || 3.0,
+      stop_loss_pct: parseFloat(stopLossPct) || 2.0,
+      ranking_types: rankingTypes,
+      ranking_price_min: rankingPriceMin,
+      ranking_price_max: rankingPriceMax,
+      max_positions: parseInt(maxPositions) || 1,
+      order_amount_pct: parseFloat(orderAmountPct) || 95,
+      sell_conditions: sellConditions,
+      indicator_check_interval_min: parseInt(indicatorIntervalMin) || 5,
+      indicator_rsi_sell_threshold: parseFloat(rsiThreshold) || 70,
+      indicator_macd_bearish_sell: macdBearish,
+      claude_model: claudeModel,
     }
 
     try {
@@ -166,6 +231,161 @@ export default function Settings() {
           </p>
         </div>
 
+        {/* 거래 파라미터 */}
+        <div className="bg-gray-900 border border-gray-800 rounded-lg p-5 space-y-4">
+          <p className="text-xs text-gray-500 uppercase tracking-wider">거래 파라미터</p>
+
+          <div className="grid grid-cols-2 gap-4">
+            <label className="space-y-1">
+              <span className="text-xs text-gray-400">익절 기준 (%)</span>
+              <input
+                type="number" step="0.1" min="0.1"
+                value={takeProfitPct}
+                onChange={(e) => setTakeProfitPct(e.target.value)}
+                className="w-full px-3 py-1.5 bg-gray-800 border border-gray-700 rounded text-sm text-gray-200"
+              />
+            </label>
+            <label className="space-y-1">
+              <span className="text-xs text-gray-400">손절 기준 (%)</span>
+              <input
+                type="number" step="0.1" min="0.1"
+                value={stopLossPct}
+                onChange={(e) => setStopLossPct(e.target.value)}
+                className="w-full px-3 py-1.5 bg-gray-800 border border-gray-700 rounded text-sm text-gray-200"
+              />
+            </label>
+            <label className="space-y-1">
+              <span className="text-xs text-gray-400">최대 동시 보유 종목</span>
+              <input
+                type="number" step="1" min="1" max="10"
+                value={maxPositions}
+                onChange={(e) => setMaxPositions(e.target.value)}
+                className="w-full px-3 py-1.5 bg-gray-800 border border-gray-700 rounded text-sm text-gray-200"
+              />
+            </label>
+            <label className="space-y-1">
+              <span className="text-xs text-gray-400">주문 금액 비율 (%)</span>
+              <input
+                type="number" step="1" min="1" max="100"
+                value={orderAmountPct}
+                onChange={(e) => setOrderAmountPct(e.target.value)}
+                className="w-full px-3 py-1.5 bg-gray-800 border border-gray-700 rounded text-sm text-gray-200"
+              />
+            </label>
+          </div>
+        </div>
+
+        {/* 순위 조회 설정 */}
+        <div className="bg-gray-900 border border-gray-800 rounded-lg p-5 space-y-3">
+          <p className="text-xs text-gray-500 uppercase tracking-wider">순위 조회 설정</p>
+
+          <div className="grid grid-cols-2 gap-2">
+            {RANKING_TYPES.map(({ value, label }) => (
+              <label key={value} className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={rankingTypes.includes(value)}
+                  onChange={() => toggleRankingType(value)}
+                  className="w-4 h-4 rounded border-gray-600 bg-gray-800 text-blue-500"
+                />
+                <span className="text-sm text-gray-300">{label}</span>
+              </label>
+            ))}
+          </div>
+
+          <div className="grid grid-cols-2 gap-4 mt-2">
+            <label className="space-y-1">
+              <span className="text-xs text-gray-400">최소 주가 (원)</span>
+              <input
+                type="number" step="1000" min="0"
+                value={rankingPriceMin}
+                onChange={(e) => setRankingPriceMin(e.target.value)}
+                className="w-full px-3 py-1.5 bg-gray-800 border border-gray-700 rounded text-sm text-gray-200"
+              />
+            </label>
+            <label className="space-y-1">
+              <span className="text-xs text-gray-400">최대 주가 (원)</span>
+              <input
+                type="number" step="1000" min="0"
+                value={rankingPriceMax}
+                onChange={(e) => setRankingPriceMax(e.target.value)}
+                className="w-full px-3 py-1.5 bg-gray-800 border border-gray-700 rounded text-sm text-gray-200"
+              />
+            </label>
+          </div>
+        </div>
+
+        {/* 매도 조건 */}
+        <div className="bg-gray-900 border border-gray-800 rounded-lg p-5 space-y-3">
+          <p className="text-xs text-gray-500 uppercase tracking-wider">매도 조건</p>
+          <p className="text-xs text-gray-600">체크된 조건이 순서대로 평가됩니다</p>
+
+          <div className="space-y-2">
+            {SELL_CONDITIONS.map(({ value, label }) => (
+              <label key={value} className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={sellConditions.includes(value)}
+                  onChange={() => toggleSellCondition(value)}
+                  className="w-4 h-4 rounded border-gray-600 bg-gray-800 text-blue-500"
+                />
+                <span className="text-sm text-gray-300">{label}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+
+        {/* 지표 설정 */}
+        <div className="bg-gray-900 border border-gray-800 rounded-lg p-5 space-y-4">
+          <p className="text-xs text-gray-500 uppercase tracking-wider">지표 설정</p>
+
+          <div className="grid grid-cols-2 gap-4">
+            <label className="space-y-1">
+              <span className="text-xs text-gray-400">지표 확인 주기 (분)</span>
+              <input
+                type="number" step="1" min="1"
+                value={indicatorIntervalMin}
+                onChange={(e) => setIndicatorIntervalMin(e.target.value)}
+                className="w-full px-3 py-1.5 bg-gray-800 border border-gray-700 rounded text-sm text-gray-200"
+              />
+            </label>
+            <label className="space-y-1">
+              <span className="text-xs text-gray-400">RSI 매도 기준값</span>
+              <input
+                type="number" step="1" min="50" max="100"
+                value={rsiThreshold}
+                onChange={(e) => setRsiThreshold(e.target.value)}
+                className="w-full px-3 py-1.5 bg-gray-800 border border-gray-700 rounded text-sm text-gray-200"
+              />
+            </label>
+          </div>
+
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={macdBearish}
+              onChange={(e) => setMacdBearish(e.target.checked)}
+              className="w-4 h-4 rounded border-gray-600 bg-gray-800 text-blue-500"
+            />
+            <span className="text-sm text-gray-300">MACD 데드크로스 시 매도</span>
+          </label>
+        </div>
+
+        {/* Claude 모델 */}
+        <div className="bg-gray-900 border border-gray-800 rounded-lg p-5 space-y-3">
+          <p className="text-xs text-gray-500 uppercase tracking-wider">Claude AI 설정</p>
+          <label className="space-y-1 block">
+            <span className="text-xs text-gray-400">Claude 모델명</span>
+            <input
+              type="text"
+              value={claudeModel}
+              onChange={(e) => setClaudeModel(e.target.value)}
+              className="w-full px-3 py-1.5 bg-gray-800 border border-gray-700 rounded text-sm text-gray-200 font-mono"
+              placeholder="claude-sonnet-4-6"
+            />
+          </label>
+        </div>
+
         <button
           type="submit"
           disabled={saving}
@@ -190,6 +410,7 @@ export default function Settings() {
               {data.account_type === '01' ? '종합계좌 (01)' : data.account_type === '22' ? '선물옵션 (22)' : data.account_type || '-'}
             </Row>
             <Row label="KIS API 키"><Badge ok={data.kis_configured} /></Row>
+            <Row label="Anthropic API 키"><Badge ok={data.anthropic_configured} /></Row>
           </div>
 
           <div className="bg-gray-900 border border-gray-800 rounded-lg p-5">

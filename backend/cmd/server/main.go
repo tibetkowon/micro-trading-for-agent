@@ -18,6 +18,7 @@ import (
 	"github.com/micro-trading-for-agent/backend/internal/logger"
 	"github.com/micro-trading-for-agent/backend/internal/monitor"
 	mqttpkg "github.com/micro-trading-for-agent/backend/internal/mqtt"
+	"github.com/micro-trading-for-agent/backend/internal/trader"
 )
 
 func main() {
@@ -99,9 +100,21 @@ func main() {
 		logger.Info("order sync scheduler started", map[string]any{"interval": "5m"})
 	}
 
+	// --- Trading engine (Claude-based autonomous trader) ---
+	var claudeClient *trader.ClaudeClient
+	if cfg.AnthropicAPIKey != "" {
+		settings, _ := db.GetTradingSettings(ctx)
+		claudeClient = trader.NewClaudeClient(cfg.AnthropicAPIKey, settings.ClaudeModel)
+		logger.Info("Claude client initialized", map[string]any{"model": settings.ClaudeModel})
+	} else {
+		logger.Warn("ANTHROPIC_API_KEY not set — autonomous trading disabled", nil)
+	}
+
+	tradingEngine := trader.NewEngine(db, kisClient, wsClient, mon, mqttPub, claudeClient)
+
 	// --- Market hours scheduler ---
 	if cfg.KISAppKey != "" && cfg.KISAppSecret != "" && wsClient != nil {
-		go runMarketScheduler(ctx, kisClient, wsClient, mon, tokenManager)
+		go runMarketScheduler(ctx, db, kisClient, wsClient, mon, tokenManager, tradingEngine)
 	}
 
 	// --- Price consumer ---
@@ -110,6 +123,7 @@ func main() {
 	}
 
 	handler := api.NewHandler(db, kisClient, tokenManager, cfg, mon, wsClient)
+	handler.SetEngine(tradingEngine)
 	router := api.SetupRouter(handler, cfg.FrontendDist)
 
 	srv := &http.Server{
@@ -147,14 +161,17 @@ func main() {
 	logger.Info("server exited", nil)
 }
 
-// runMarketScheduler manages WebSocket lifecycle based on KST market hours:
+// runMarketScheduler manages WebSocket lifecycle and trading engine based on KST market hours:
 //
 //	08:50 → issue fresh token → fetch approval_key → connect → subscribe
-//	15:15 → liquidate all positions → publish report
+//	09:00 → check trading_enabled + market open → set tradingReady
+//	09:15 → start trading engine + indicator checker (if tradingReady)
+//	15:15 → stop engine → liquidate all positions
+//	15:20 → generate daily report → save to DB
 //	16:00 → disconnect
 func runMarketScheduler(ctx context.Context,
-	kisClient *kis.Client, wsClient *kis.WebSocketClient, mon *monitor.Monitor,
-	tokenManager *kis.TokenManager) {
+	db *database.DB, kisClient *kis.Client, wsClient *kis.WebSocketClient, mon *monitor.Monitor,
+	tokenManager *kis.TokenManager, eng *trader.Engine) {
 
 	kst, _ := time.LoadLocation("Asia/Seoul")
 
@@ -162,6 +179,10 @@ func runMarketScheduler(ctx context.Context,
 	defer ticker.Stop()
 
 	var wsRunning bool
+	var engineRunning bool
+	var tradingReady bool
+	var stopEngine func()
+	var stopIndicator context.CancelFunc
 
 	for {
 		select {
@@ -192,6 +213,7 @@ func runMarketScheduler(ctx context.Context,
 				wsClient.SetApprovalKey(approvalKey)
 				go wsClient.StartWithReconnect(ctx)
 				wsRunning = true
+				tradingReady = false
 
 				// Subscribe execution notices if HTS ID is configured.
 				time.Sleep(2 * time.Second) // Wait for connection
@@ -200,15 +222,92 @@ func runMarketScheduler(ctx context.Context,
 				}
 				logger.Info("market scheduler: WebSocket connected at 08:50", nil)
 
+			case hhmm == 900 && !tradingReady:
+				// 09:00 — verify trading is enabled and market is open
+				tradingEnabled := db.GetSetting(ctx, "trading_enabled") != "false"
+				if !tradingEnabled {
+					logger.Info("market scheduler: trading disabled — engine will not start", nil)
+					break
+				}
+				isOpen, err := agent.IsMarketOpen(ctx, kisClient)
+				if err != nil || !isOpen {
+					logger.Info("market scheduler: market not open at 09:00 — engine will not start",
+						map[string]any{"is_open": isOpen})
+					break
+				}
+				tradingReady = true
+				logger.Info("market scheduler: trading ready confirmed at 09:00", nil)
+
+			case hhmm == 915 && tradingReady && !engineRunning:
+				// 09:15 — start autonomous trading engine
+				settings, err := db.GetTradingSettings(ctx)
+				if err != nil {
+					logger.Error("market scheduler: GetTradingSettings failed", map[string]any{"error": err.Error()})
+					break
+				}
+
+				stopEngine = eng.Start(ctx)
+				engineRunning = true
+				logger.Info("market scheduler: trading engine started at 09:15", nil)
+
+				// Start indicator checker
+				indCtx, indCancel := context.WithCancel(ctx)
+				stopIndicator = indCancel
+				go mon.StartIndicatorChecker(
+					indCtx,
+					settings.IndicatorCheckIntervalMin,
+					settings.SellConditions,
+					settings.IndicatorRSISellThreshold,
+					settings.IndicatorMACDBearishSell,
+					func(iCtx context.Context, code string) (*monitor.IndicatorSnapshot, error) {
+						info, err := agent.GetStockInfo(iCtx, kisClient, code)
+						if err != nil {
+							return nil, err
+						}
+						return &monitor.IndicatorSnapshot{
+							RSI14:      info.RSI14,
+							MACDLine:   info.MACDLine,
+							MACDSignal: info.MACDSignal,
+						}, nil
+					},
+				)
+				logger.Info("market scheduler: indicator checker started", nil)
+
 			case hhmm == 1515:
-				// 15:15 — liquidate all monitored positions
+				// 15:15 — stop engine, stop indicator checker, liquidate all
+				if engineRunning && stopEngine != nil {
+					stopEngine()
+					engineRunning = false
+				}
+				if stopIndicator != nil {
+					stopIndicator()
+					stopIndicator = nil
+				}
 				logger.Info("market scheduler: 15:15 liquidation triggered", nil)
 				mon.LiquidateAll(ctx)
+
+			case hhmm == 1520:
+				// 15:20 — generate daily report
+				report, err := eng.GenerateDailyReport(ctx)
+				if err != nil {
+					logger.Error("market scheduler: daily report generation failed",
+						map[string]any{"error": err.Error()})
+				} else {
+					kstDate := now.Format("2006-01-02")
+					if saveErr := db.SaveReport(ctx, kstDate, report); saveErr != nil {
+						logger.Error("market scheduler: save report failed",
+							map[string]any{"error": saveErr.Error()})
+					} else {
+						logger.Info("market scheduler: daily report saved", map[string]any{"date": kstDate})
+					}
+				}
 
 			case hhmm == 1600 && wsRunning:
 				// 16:00 — disconnect
 				wsClient.Disconnect()
 				wsRunning = false
+				tradingReady = false
+				engineRunning = false
 				logger.Info("market scheduler: WebSocket disconnected at 16:00", nil)
 			}
 		}

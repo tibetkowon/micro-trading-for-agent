@@ -95,6 +95,18 @@ export default function Dashboard() {
               <p className="text-xs text-gray-500 mb-1">주문가능금액</p>
               <p className="text-sm font-semibold">{fmt(status.available_cash)}</p>
             </div>
+            <div>
+              <p className="text-xs text-gray-500 mb-1">트레이더 상태</p>
+              <p className="text-sm font-semibold">
+                <span className={
+                  status.trader_state === 'IDLE' ? 'text-gray-400' :
+                  status.trader_state === 'MONITORING' ? 'text-blue-400' :
+                  'text-yellow-400'
+                }>
+                  {status.trader_state || 'IDLE'}
+                </span>
+              </p>
+            </div>
           </div>
         </div>
       )}

@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"strconv"
 	"time"
@@ -13,6 +14,7 @@ import (
 	"github.com/micro-trading-for-agent/backend/internal/kis"
 	"github.com/micro-trading-for-agent/backend/internal/models"
 	"github.com/micro-trading-for-agent/backend/internal/monitor"
+	"github.com/micro-trading-for-agent/backend/internal/trader"
 )
 
 // Handler holds shared dependencies for all HTTP handlers.
@@ -23,6 +25,7 @@ type Handler struct {
 	cfg          *config.Config
 	monitor      *monitor.Monitor
 	wsClient     *kis.WebSocketClient
+	engine       *trader.Engine
 }
 
 // NewHandler creates a new Handler with the given dependencies.
@@ -36,6 +39,11 @@ func NewHandler(db *database.DB, client *kis.Client, tokenManager *kis.TokenMana
 		monitor:      mon,
 		wsClient:     wsClient,
 	}
+}
+
+// SetEngine injects the trading engine (called after engine is created in main).
+func (h *Handler) SetEngine(e *trader.Engine) {
+	h.engine = e
 }
 
 // GET /api/balance
@@ -257,12 +265,18 @@ func (h *Handler) GetServerStatus(c *gin.Context) {
 
 	tradingEnabled := h.db.GetSetting(c.Request.Context(), "trading_enabled") != "false"
 
+	traderState := string(trader.StateIdle)
+	if h.engine != nil {
+		traderState = string(h.engine.GetState())
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"market_open":     marketOpen,
 		"trading_enabled": tradingEnabled,
 		"available_cash":  availableCash,
 		"ws_connected":    wsConnected,
 		"monitored_count": monitoredCount,
+		"trader_state":    traderState,
 	})
 }
 
@@ -389,24 +403,53 @@ func (h *Handler) GetSettings(c *gin.Context) {
 		rankingExclCls = "1111111111"
 	}
 
+	ts, _ := h.db.GetTradingSettings(c.Request.Context())
+
 	c.JSON(http.StatusOK, gin.H{
 		"account_no":        maskedAccount,
 		"account_type":      h.cfg.KISAccountType,
 		"kis_configured":    h.cfg.KISAppKey != "" && h.cfg.KISAppSecret != "",
 		"hts_id_configured": h.cfg.KISHTSID != "",
+		"anthropic_configured": h.cfg.AnthropicAPIKey != "",
 		"mqtt_broker_url":   h.cfg.MQTTBrokerURL,
 		"mqtt_client_id":    h.cfg.MQTTClientID,
 		"ws_connected":      wsConnected,
 		"trading_enabled":   tradingEnabled,
 		"ranking_excl_cls":  rankingExclCls,
+		// Autonomous trading settings
+		"take_profit_pct":              ts.TakeProfitPct,
+		"stop_loss_pct":                ts.StopLossPct,
+		"ranking_types":                ts.RankingTypes,
+		"ranking_price_min":            ts.RankingPriceMin,
+		"ranking_price_max":            ts.RankingPriceMax,
+		"max_positions":                ts.MaxPositions,
+		"order_amount_pct":             ts.OrderAmountPct,
+		"sell_conditions":              ts.SellConditions,
+		"indicator_check_interval_min": ts.IndicatorCheckIntervalMin,
+		"indicator_rsi_sell_threshold": ts.IndicatorRSISellThreshold,
+		"indicator_macd_bearish_sell":  ts.IndicatorMACDBearishSell,
+		"claude_model":                 ts.ClaudeModel,
 	})
 }
 
-// PATCH /api/settings — 런타임 설정 업데이트 (trading_enabled, ranking_excl_cls)
+// PATCH /api/settings — 런타임 설정 업데이트
 func (h *Handler) UpdateSettings(c *gin.Context) {
 	var req struct {
-		TradingEnabled *bool  `json:"trading_enabled"`
+		TradingEnabled *bool `json:"trading_enabled"`
 		RankingExclCls string `json:"ranking_excl_cls"`
+		// Autonomous trading settings (all optional)
+		TakeProfitPct             *float64 `json:"take_profit_pct"`
+		StopLossPct               *float64 `json:"stop_loss_pct"`
+		RankingTypes              []string `json:"ranking_types"`
+		RankingPriceMin           string   `json:"ranking_price_min"`
+		RankingPriceMax           string   `json:"ranking_price_max"`
+		MaxPositions              *int     `json:"max_positions"`
+		OrderAmountPct            *float64 `json:"order_amount_pct"`
+		SellConditions            []string `json:"sell_conditions"`
+		IndicatorCheckIntervalMin *int     `json:"indicator_check_interval_min"`
+		IndicatorRSISellThreshold *float64 `json:"indicator_rsi_sell_threshold"`
+		IndicatorMACDBearishSell  *bool    `json:"indicator_macd_bearish_sell"`
+		ClaudeModel               string   `json:"claude_model"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -416,16 +459,23 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 	ctx := c.Request.Context()
 	changed := false
 
+	save := func(key, val string) bool {
+		if err := h.db.SetSetting(ctx, key, val); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "저장 실패: " + err.Error()})
+			return false
+		}
+		changed = true
+		return true
+	}
+
 	if req.TradingEnabled != nil {
 		val := "true"
 		if !*req.TradingEnabled {
 			val = "false"
 		}
-		if err := h.db.SetSetting(ctx, "trading_enabled", val); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "저장 실패: " + err.Error()})
+		if !save("trading_enabled", val) {
 			return
 		}
-		changed = true
 	}
 
 	if req.RankingExclCls != "" {
@@ -433,11 +483,76 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "ranking_excl_cls는 10자리 문자열이어야 합니다"})
 			return
 		}
-		if err := h.db.SetSetting(ctx, "ranking_excl_cls", req.RankingExclCls); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "저장 실패: " + err.Error()})
+		if !save("ranking_excl_cls", req.RankingExclCls) {
 			return
 		}
-		changed = true
+	}
+
+	if req.TakeProfitPct != nil {
+		if !save("take_profit_pct", strconv.FormatFloat(*req.TakeProfitPct, 'f', -1, 64)) {
+			return
+		}
+	}
+	if req.StopLossPct != nil {
+		if !save("stop_loss_pct", strconv.FormatFloat(*req.StopLossPct, 'f', -1, 64)) {
+			return
+		}
+	}
+	if len(req.RankingTypes) > 0 {
+		b, _ := json.Marshal(req.RankingTypes)
+		if !save("ranking_types", string(b)) {
+			return
+		}
+	}
+	if req.RankingPriceMin != "" {
+		if !save("ranking_price_min", req.RankingPriceMin) {
+			return
+		}
+	}
+	if req.RankingPriceMax != "" {
+		if !save("ranking_price_max", req.RankingPriceMax) {
+			return
+		}
+	}
+	if req.MaxPositions != nil {
+		if !save("max_positions", strconv.Itoa(*req.MaxPositions)) {
+			return
+		}
+	}
+	if req.OrderAmountPct != nil {
+		if !save("order_amount_pct", strconv.FormatFloat(*req.OrderAmountPct, 'f', -1, 64)) {
+			return
+		}
+	}
+	if len(req.SellConditions) > 0 {
+		b, _ := json.Marshal(req.SellConditions)
+		if !save("sell_conditions", string(b)) {
+			return
+		}
+	}
+	if req.IndicatorCheckIntervalMin != nil {
+		if !save("indicator_check_interval_min", strconv.Itoa(*req.IndicatorCheckIntervalMin)) {
+			return
+		}
+	}
+	if req.IndicatorRSISellThreshold != nil {
+		if !save("indicator_rsi_sell_threshold", strconv.FormatFloat(*req.IndicatorRSISellThreshold, 'f', -1, 64)) {
+			return
+		}
+	}
+	if req.IndicatorMACDBearishSell != nil {
+		val := "false"
+		if *req.IndicatorMACDBearishSell {
+			val = "true"
+		}
+		if !save("indicator_macd_bearish_sell", val) {
+			return
+		}
+	}
+	if req.ClaudeModel != "" {
+		if !save("claude_model", req.ClaudeModel) {
+			return
+		}
 	}
 
 	if !changed {
@@ -685,4 +800,46 @@ func (h *Handler) DebugLiquidate(c *gin.Context) {
 	}
 	go h.monitor.LiquidateAll(context.Background())
 	c.JSON(http.StatusOK, gin.H{"message": "청산 시작 (비동기 실행)"})
+}
+
+// GET /api/reports — 일일 리포트 목록 (날짜 내림차순)
+func (h *Handler) GetReports(c *gin.Context) {
+	rows, err := h.db.QueryContext(c.Request.Context(),
+		`SELECT id, report_date, created_at FROM reports ORDER BY report_date DESC LIMIT 30`)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	defer rows.Close()
+
+	var reports []models.Report
+	for rows.Next() {
+		var r models.Report
+		if err := rows.Scan(&r.ID, &r.ReportDate, &r.CreatedAt); err == nil {
+			reports = append(reports, r)
+		}
+	}
+	if reports == nil {
+		reports = []models.Report{}
+	}
+	c.JSON(http.StatusOK, gin.H{"reports": reports})
+}
+
+// GET /api/reports/:date — 특정 날짜 리포트 전문 조회 (YYYY-MM-DD)
+func (h *Handler) GetReport(c *gin.Context) {
+	date := c.Param("date")
+	if date == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "date parameter required"})
+		return
+	}
+
+	var r models.Report
+	err := h.db.QueryRowContext(c.Request.Context(),
+		`SELECT id, report_date, content, created_at FROM reports WHERE report_date = ?`, date,
+	).Scan(&r.ID, &r.ReportDate, &r.Content, &r.CreatedAt)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "report not found"})
+		return
+	}
+	c.JSON(http.StatusOK, r)
 }

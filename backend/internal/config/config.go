@@ -21,6 +21,8 @@ type Config struct {
 
 	MQTTBrokerURL string
 	MQTTClientID  string
+
+	AnthropicAPIKey string
 }
 
 // Load reads .env file (if present) and returns a populated Config.
@@ -41,6 +43,8 @@ func Load() (*Config, error) {
 		FrontendDist:   getEnv("FRONTEND_DIST_PATH", "./frontend/dist"),
 		MQTTBrokerURL:  getEnv("MQTT_BROKER_URL", "tcp://localhost:1883"),
 		MQTTClientID:   getEnv("MQTT_CLIENT_ID", "micro-trading-server"),
+
+		AnthropicAPIKey: getEnv("ANTHROPIC_API_KEY", ""),
 	}
 
 	return cfg, nil

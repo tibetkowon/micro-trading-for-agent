@@ -61,6 +61,12 @@ func SetupRouter(h *Handler, frontendDist string) *gin.Engine {
 			ranking.GET("/exec-count", h.GetExecCountRank)
 			ranking.GET("/disparity", h.GetDisparityRank)
 		}
+
+		reports := api.Group("/reports")
+		{
+			reports.GET("", h.GetReports)
+			reports.GET("/:date", h.GetReport)
+		}
 	}
 
 	// Health check

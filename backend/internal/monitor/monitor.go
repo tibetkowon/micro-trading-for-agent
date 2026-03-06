@@ -13,6 +13,13 @@ import (
 	mqttpkg "github.com/micro-trading-for-agent/backend/internal/mqtt"
 )
 
+// IndicatorSnapshot holds key technical indicators for sell condition evaluation.
+type IndicatorSnapshot struct {
+	RSI14      float64
+	MACDLine   float64
+	MACDSignal float64
+}
+
 // MonitoredEntry holds a buy position being actively monitored.
 type MonitoredEntry struct {
 	StockCode   string
@@ -21,6 +28,7 @@ type MonitoredEntry struct {
 	TargetPrice float64
 	StopPrice   float64
 	OrderID     int64
+	SoldCh      chan<- string // optional: engine receives sold signal (may be nil)
 }
 
 // Monitor watches registered positions for target/stop price hits and
@@ -184,6 +192,15 @@ func (m *Monitor) executeSell(stockCode string, pos *MonitoredEntry) int {
 
 	logger.Info("auto-sell: sell order placed",
 		map[string]any{"stock_code": stockCode, "qty": qty, "filled_price": pos.FilledPrice})
+
+	// Notify engine that this position was sold.
+	if pos.SoldCh != nil {
+		select {
+		case pos.SoldCh <- stockCode:
+		default:
+		}
+	}
+
 	return qty
 }
 
@@ -317,6 +334,101 @@ func (m *Monitor) LoadFromDB(ctx context.Context) error {
 		logger.Info("monitor: restored positions from DB", map[string]any{"count": count})
 	}
 	return nil
+}
+
+// StartIndicatorChecker periodically checks technical indicators for each monitored position
+// and executes a sell if a configured condition is met.
+// getInfoFn is a callback (injected to avoid circular imports) that returns the current indicators.
+// conditions controls which checks are active and their priority order.
+// Supported values: "rsi_overbought", "macd_bearish" (target_pct/stop_pct are handled by HandlePrice).
+func (m *Monitor) StartIndicatorChecker(
+	ctx context.Context,
+	intervalMin int,
+	conditions []string,
+	rsiThreshold float64,
+	macdBearish bool,
+	getInfoFn func(ctx context.Context, code string) (*IndicatorSnapshot, error),
+) {
+	if intervalMin <= 0 {
+		intervalMin = 5
+	}
+	ticker := time.NewTicker(time.Duration(intervalMin) * time.Minute)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			m.checkIndicators(ctx, conditions, rsiThreshold, macdBearish, getInfoFn)
+		}
+	}
+}
+
+func (m *Monitor) checkIndicators(
+	ctx context.Context,
+	conditions []string,
+	rsiThreshold float64,
+	macdBearish bool,
+	getInfoFn func(ctx context.Context, code string) (*IndicatorSnapshot, error),
+) {
+	m.mu.RLock()
+	codes := make([]string, 0, len(m.positions))
+	for code := range m.positions {
+		codes = append(codes, code)
+	}
+	m.mu.RUnlock()
+
+	for _, code := range codes {
+		snap, err := getInfoFn(ctx, code)
+		if err != nil {
+			logger.Error("indicator check: getInfoFn failed",
+				map[string]any{"stock_code": code, "error": err.Error()})
+			continue
+		}
+
+		m.mu.RLock()
+		pos, ok := m.positions[code]
+		m.mu.RUnlock()
+		if !ok {
+			continue
+		}
+
+		triggered := false
+		triggerReason := ""
+
+		for _, cond := range conditions {
+			switch cond {
+			case "rsi_overbought":
+				if snap.RSI14 > 0 && rsiThreshold > 0 && snap.RSI14 >= rsiThreshold {
+					triggered = true
+					triggerReason = fmt.Sprintf("RSI %.2f >= threshold %.2f", snap.RSI14, rsiThreshold)
+				}
+			case "macd_bearish":
+				if macdBearish && snap.MACDLine != 0 && snap.MACDLine < snap.MACDSignal {
+					triggered = true
+					triggerReason = fmt.Sprintf("MACD bearish crossover: line=%.4f signal=%.4f", snap.MACDLine, snap.MACDSignal)
+				}
+			}
+			if triggered {
+				break
+			}
+		}
+
+		if !triggered {
+			continue
+		}
+
+		logger.Info("indicator check: sell condition triggered",
+			map[string]any{"stock_code": code, "reason": triggerReason})
+		sellQty := m.executeSell(code, pos)
+		if m.mqttPub != nil && sellQty > 0 {
+			m.mqttPub.PublishAlert(mqttpkg.EventTargetHit,
+				pos.StockCode, pos.StockName, 0,
+				pos.TargetPrice, pos.StopPrice, pos.FilledPrice, sellQty, false)
+		}
+		m.Remove(ctx, code)
+	}
 }
 
 // StartPriceConsumer reads from wsClient.PriceCh and calls HandlePrice.

@@ -18,7 +18,6 @@ export default function Orders() {
   const { data, loading, error, refetch } = useApi('/api/orders?limit=100')
   const [deletingIds, setDeletingIds] = useState(new Set())
   const [syncing, setSyncing] = useState(false)
-  const [syncDays, setSyncDays] = useState(1)
   const [syncMsg, setSyncMsg] = useState(null) // { ok: bool, text: string }
 
   const orders = data?.orders || []
@@ -27,7 +26,7 @@ export default function Orders() {
     setSyncing(true)
     setSyncMsg(null)
     try {
-      const res = await fetch(`/api/orders?sync=true&days=${syncDays}&limit=1`)
+      const res = await fetch('/api/orders?sync=true&days=1&limit=1')
       const body = await res.json()
       if (body.sync_error) {
         setSyncMsg({ ok: false, text: body.sync_error })
@@ -61,17 +60,6 @@ export default function Orders() {
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-xl font-bold">주문 내역</h1>
         <div className="flex gap-2">
-          <select
-            value={syncDays}
-            onChange={(e) => setSyncDays(Number(e.target.value))}
-            disabled={syncing}
-            className="text-sm px-2 py-1.5 bg-gray-800 text-gray-300 rounded border border-gray-700 disabled:opacity-50"
-          >
-            <option value={1}>오늘</option>
-            <option value={7}>7일</option>
-            <option value={30}>30일</option>
-            <option value={90}>90일</option>
-          </select>
           <button
             onClick={handleSync}
             disabled={syncing}
