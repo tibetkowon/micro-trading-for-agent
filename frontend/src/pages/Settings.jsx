@@ -121,6 +121,18 @@ export default function Settings() {
     )
   }
 
+  function moveSellCondition(val, dir) {
+    setSellConditions((prev) => {
+      const idx = prev.indexOf(val)
+      if (idx === -1) return prev
+      const next = [...prev]
+      const swap = idx + dir
+      if (swap < 0 || swap >= next.length) return prev
+      ;[next[idx], next[swap]] = [next[swap], next[idx]]
+      return next
+    })
+  }
+
   async function handleSave(e) {
     e.preventDefault()
     setSaving(true)
@@ -318,19 +330,48 @@ export default function Settings() {
         {/* 매도 조건 */}
         <div className="bg-gray-900 border border-gray-800 rounded-lg p-5 space-y-3">
           <p className="text-xs text-gray-500 uppercase tracking-wider">매도 조건</p>
-          <p className="text-xs text-gray-600">체크된 조건이 순서대로 평가됩니다</p>
+          <p className="text-xs text-gray-600">위에서부터 순서대로 평가됩니다. 화살표로 우선순위를 변경하세요.</p>
 
-          <div className="space-y-2">
-            {SELL_CONDITIONS.map(({ value, label }) => (
-              <label key={value} className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={sellConditions.includes(value)}
-                  onChange={() => toggleSellCondition(value)}
-                  className="w-4 h-4 rounded border-gray-600 bg-gray-800 text-blue-500"
-                />
-                <span className="text-sm text-gray-300">{label}</span>
-              </label>
+          <div className="space-y-1">
+            {/* 활성화된 조건 — 순서 변경 가능 */}
+            {sellConditions.map((val, idx) => {
+              const item = SELL_CONDITIONS.find(c => c.value === val)
+              if (!item) return null
+              return (
+                <div key={val} className="flex items-center gap-2 bg-gray-800 rounded px-3 py-2">
+                  <span className="text-xs text-gray-500 w-4">{idx + 1}</span>
+                  <span className="flex-1 text-sm text-gray-200">{item.label}</span>
+                  <button
+                    type="button"
+                    onClick={() => moveSellCondition(val, -1)}
+                    disabled={idx === 0}
+                    className="text-gray-500 hover:text-gray-200 disabled:opacity-20 px-1"
+                  >▲</button>
+                  <button
+                    type="button"
+                    onClick={() => moveSellCondition(val, 1)}
+                    disabled={idx === sellConditions.length - 1}
+                    className="text-gray-500 hover:text-gray-200 disabled:opacity-20 px-1"
+                  >▼</button>
+                  <button
+                    type="button"
+                    onClick={() => toggleSellCondition(val)}
+                    className="text-gray-600 hover:text-red-400 px-1 text-xs"
+                  >✕</button>
+                </div>
+              )
+            })}
+            {/* 비활성화된 조건 — 추가 버튼 */}
+            {SELL_CONDITIONS.filter(c => !sellConditions.includes(c.value)).map(({ value, label }) => (
+              <div key={value} className="flex items-center gap-2 rounded px-3 py-2 opacity-40">
+                <span className="text-xs text-gray-500 w-4">-</span>
+                <span className="flex-1 text-sm text-gray-500">{label}</span>
+                <button
+                  type="button"
+                  onClick={() => toggleSellCondition(value)}
+                  className="text-gray-600 hover:text-green-400 px-1 text-xs"
+                >＋</button>
+              </div>
             ))}
           </div>
         </div>

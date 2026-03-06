@@ -32,28 +32,40 @@ The system is divided into two main roles:
 # Skill Strategy & Context Optimization
 To optimize token usage and maintain focus, do not scan the entire workspace indiscriminately. We strictly separate static documentation (`docs/`) from behavioral skill instructions (`.claude/skills/`).
 
-**Available Skills (Behavioral Guidelines & Workflows):**
-Always trigger the following skills under their specific conditions by reading and following the corresponding `.md` file in `.claude/skills/`:
+## MANDATORY POST-TASK CHECKLIST
+**CRITICAL: After EVERY coding task, execute ALL applicable items below WITHOUT waiting for user instruction. Skipping any applicable item is a failure.**
 
-1. **Feature Planning (`.claude/skills/plan_feature.md`):** - **Trigger:** Before starting any new feature or architectural change. 
+| Condition | MANDATORY Action |
+|-----------|-----------------|
+| Code written or modified | Run `go build ./...` AND `npm run build` BEFORE committing |
+| Any task or bug fix completed | Append to `docs/changelog.md` (newest entry at top) |
+| New feature / significant code change | Create review doc in `docs/reviews/` (Korean, Go+React explained) |
+| SQLite table or column added/modified | Update `docs/db_schema.md` |
+| New package folder or major architecture change | Update `docs/architecture.md` |
+| Major milestone reached | Update root `README.md` |
+
+---
+
+**Available Skills (Full Instructions):**
+Read the corresponding `.md` file in `.claude/skills/` for detailed instructions:
+
+1. **Feature Planning (`.claude/skills/plan_feature.md`):** - **Trigger:** BEFORE starting any new feature or architectural change — NEVER start coding first.
    - **Action:** Create a step-by-step plan in `docs/plans/` and wait for user approval.
-2. **Code Verification (`.claude/skills/verify_implementation.md`):** - **Trigger:** After writing/modifying code and BEFORE committing. 
+2. **Code Verification (`.claude/skills/verify_implementation.md`):** - **Trigger:** After writing/modifying code and BEFORE committing — NO exceptions.
    - **Action:** Run Go build/tests and React lint/build to ensure no broken code is deployed.
-3. **Changelog Recording (`.claude/skills/record_changelog.md`):** - **Trigger:** After successfully completing a task or bug fix. 
+3. **Changelog Recording (`.claude/skills/record_changelog.md`):** - **Trigger:** After EVERY completed task or bug fix — mandatory, do not skip.
    - **Action:** Append a brief summary of changes to `docs/changelog.md`.
-4. **Code Tutor (`.claude/skills/write_code_tutor.md`):** - **Trigger:** After significant coding or when requested. 
+4. **Code Tutor (`.claude/skills/write_code_tutor.md`):** - **Trigger:** After EVERY significant feature implementation — do not wait for user to ask.
    - **Action:** Generate a Korean explanation of Go/React logic in `docs/reviews/` for the user's learning.
-5. **Log Analysis (`.claude/skills/analyze_trade_logs.md`):** - **Trigger:** When investigating KIS API errors or trade failures. 
+5. **Log Analysis (`.claude/skills/analyze_trade_logs.md`):** - **Trigger:** When investigating KIS API errors or trade failures.
    - **Action:** Smartly extract and analyze logs using terminal commands without reading entire files.
-6. **DB Schema Update (`.claude/skills/update_db_schema.md`):** - **Trigger:** When creating or modifying SQLite tables/models. 
+6. **DB Schema Update (`.claude/skills/update_db_schema.md`):** - **Trigger:** Whenever a SQLite table or column is created or modified — mandatory.
    - **Action:** Update the schema documentation in `docs/db_schema.md`.
-7. **Architecture Update (`.claude/skills/update_architecture.md`):** - **Trigger:** When introducing new root folders or major packages. 
+7. **Architecture Update (`.claude/skills/update_architecture.md`):** - **Trigger:** Whenever a new root folder or major package is introduced — mandatory.
    - **Action:** Update the project structure map in `docs/architecture.md`.
-8. **README Update (`.claude/skills/update_readme.md`):** - **Trigger:** After major milestones or initial setup. 
+8. **README Update (`.claude/skills/update_readme.md`):** - **Trigger:** After major milestones or initial setup.
    - **Action:** Update the root `README.md` to reflect the current project state.
 9. **Context Evolution (`.claude/skills/manage_skills.md`):** - **Trigger:** When discovering new API quirks, project rules, or recurring patterns.
    - **Action:** Document them as new skills or context files so they are not forgotten.
 10. **KIS API 구현 (`.claude/skills/implement_kis_feature.md`):** - **Trigger:** KIS API 신규 기능 구현 또는 기존 기능 개선 시.
    - **Action:** `docs/kis-api/` 에서 관련 명세 문서(기본시세/순위분석/종목정보/주문계좌/인증/실시간)를 읽고 올바른 스펙으로 구현.
-11. **SKILL.md 생성/갱신 (`.claude/skills/generate_openclaw_spec.md`):** - **Trigger:** 프로젝트 진입점(CLI/API) 변경 시 또는 사용자가 "SKILL.md 업데이트" 요청 시.
-   - **Action:** YAML Frontmatter를 포함한 `SKILL.md` 파일을 루트에 생성·업데이트하여 OpenClaw 인덱싱 정보를 유지.
