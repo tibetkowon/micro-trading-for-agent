@@ -45,12 +45,6 @@ const EXCL_LABELS = [
   'ETN',
 ]
 
-const RANKING_TYPES = [
-  { value: 'volume', label: '거래량 순위' },
-  { value: 'strength', label: '체결강도 순위' },
-  { value: 'exec_count', label: '대량체결 순위' },
-  { value: 'disparity', label: '이격도 순위' },
-]
 
 const SELL_CONDITIONS = [
   { value: 'target_pct', label: '목표가 도달 (WebSocket 실시간)' },
