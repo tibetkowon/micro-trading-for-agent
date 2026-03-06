@@ -496,7 +496,7 @@ func (e *Engine) GenerateDailyReport(ctx context.Context) (string, error) {
 			} else {
 				winCount++
 			}
-			sb.WriteString(fmt.Sprintf("| %s | %,.0f | %,.0f | %d | %s%.0f원 | %s%.1f%% |\n",
+			sb.WriteString(fmt.Sprintf("| %s | %.0f | %.0f | %d | %s%.0f원 | %s%.1f%% |\n",
 				t.StockName, t.BuyPrice, t.SellPrice, t.Qty, sign, t.PnL, sign, t.PnLPct))
 			totalPnL += t.PnL
 		}
