@@ -26,6 +26,12 @@ type TradingSettings struct {
 	IndicatorRSISellThreshold float64  // RSI 매도 기준값
 	IndicatorMACDBearishSell  bool     // MACD 데드크로스 매도 여부
 	ClaudeModel               string   // 사용할 Claude 모델
+	// 순위별 필터
+	RankingVolumeMinIncrRate   float64 // 거래량 증가율 최솟값 (0=필터없음)
+	RankingStrengthMin         float64 // 체결강도 최솟값 (0=필터없음)
+	RankingExecCountNetBuyOnly bool    // 대량체결: 순매수 우세 종목만
+	RankingDisparityD20Min     float64 // 20일 이격도 최솟값 (0=필터없음)
+	RankingDisparityD20Max     float64 // 20일 이격도 최댓값 (0=필터없음)
 }
 
 // DB wraps the sql.DB connection.
@@ -156,6 +162,11 @@ func (db *DB) migrate() error {
 		{"indicator_rsi_sell_threshold", "70"},
 		{"indicator_macd_bearish_sell", "false"},
 		{"claude_model", "claude-sonnet-4-6"},
+		{"ranking_volume_min_incrrate", "0"},
+		{"ranking_strength_min", "100"},
+		{"ranking_execcount_net_buy_only", "true"},
+		{"ranking_disparity_d20_min", "0"},
+		{"ranking_disparity_d20_max", "0"},
 	}
 	for _, s := range defaultSettings {
 		db.Exec( //nolint:errcheck
@@ -180,7 +191,9 @@ func (db *DB) GetTradingSettings(ctx context.Context) (TradingSettings, error) {
 			`'take_profit_pct','stop_loss_pct','ranking_types',`+
 			`'ranking_price_min','ranking_price_max','max_positions',`+
 			`'order_amount_pct','sell_conditions','indicator_check_interval_min',`+
-			`'indicator_rsi_sell_threshold','indicator_macd_bearish_sell','claude_model'`+
+			`'indicator_rsi_sell_threshold','indicator_macd_bearish_sell','claude_model',`+
+			`'ranking_volume_min_incrrate','ranking_strength_min',`+
+			`'ranking_execcount_net_buy_only','ranking_disparity_d20_min','ranking_disparity_d20_max'`+
 			`)`)
 	if err != nil {
 		return TradingSettings{}, fmt.Errorf("GetTradingSettings query: %w", err)
@@ -250,18 +263,23 @@ func (db *DB) GetTradingSettings(ctx context.Context) (TradingSettings, error) {
 	}
 
 	return TradingSettings{
-		TakeProfitPct:             takeProfitPct,
-		StopLossPct:               stopLossPct,
-		RankingTypes:              rankingTypes,
-		RankingPriceMin:           vals["ranking_price_min"],
-		RankingPriceMax:           vals["ranking_price_max"],
-		MaxPositions:              maxPositions,
-		OrderAmountPct:            orderAmountPct,
-		SellConditions:            sellConditions,
-		IndicatorCheckIntervalMin: indicatorCheckInterval,
-		IndicatorRSISellThreshold: rsiThreshold,
-		IndicatorMACDBearishSell:  vals["indicator_macd_bearish_sell"] == "true",
-		ClaudeModel:               claudeModel,
+		TakeProfitPct:              takeProfitPct,
+		StopLossPct:                stopLossPct,
+		RankingTypes:               rankingTypes,
+		RankingPriceMin:            vals["ranking_price_min"],
+		RankingPriceMax:            vals["ranking_price_max"],
+		MaxPositions:               maxPositions,
+		OrderAmountPct:             orderAmountPct,
+		SellConditions:             sellConditions,
+		IndicatorCheckIntervalMin:  indicatorCheckInterval,
+		IndicatorRSISellThreshold:  rsiThreshold,
+		IndicatorMACDBearishSell:   vals["indicator_macd_bearish_sell"] == "true",
+		ClaudeModel:                claudeModel,
+		RankingVolumeMinIncrRate:   f64("ranking_volume_min_incrrate"),
+		RankingStrengthMin:         f64("ranking_strength_min"),
+		RankingExecCountNetBuyOnly: vals["ranking_execcount_net_buy_only"] != "false",
+		RankingDisparityD20Min:     f64("ranking_disparity_d20_min"),
+		RankingDisparityD20Max:     f64("ranking_disparity_d20_max"),
 	}, nil
 }
 

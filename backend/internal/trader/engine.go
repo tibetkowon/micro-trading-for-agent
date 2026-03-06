@@ -336,7 +336,7 @@ func (e *Engine) getTodayTradedCodes(ctx context.Context) []string {
 	return codes
 }
 
-// getRankings calls the configured ranking APIs and returns a unified RankItem list.
+// getRankings calls the configured ranking APIs, applies filters, and returns a unified RankItem list.
 func (e *Engine) getRankings(ctx context.Context, settings database.TradingSettings) ([]RankItem, error) {
 	excludeCls := e.db.GetSetting(ctx, "ranking_excl_cls")
 	priceMin := settings.RankingPriceMin
@@ -353,10 +353,17 @@ func (e *Engine) getRankings(ctx context.Context, settings database.TradingSetti
 				continue
 			}
 			for _, item := range items {
+				if settings.RankingVolumeMinIncrRate > 0 {
+					rate, _ := strconv.ParseFloat(item.VolIncrRate, 64)
+					if rate < settings.RankingVolumeMinIncrRate {
+						continue
+					}
+				}
 				all = append(all, RankItem{
 					DataRank: item.DataRank, StockCode: item.StockCode,
 					StockName: item.StockName, CurrentPrice: item.CurrentPrice,
 					Volume: item.Volume, RankingType: "volume",
+					VolIncrRate: item.VolIncrRate,
 				})
 			}
 
@@ -367,10 +374,17 @@ func (e *Engine) getRankings(ctx context.Context, settings database.TradingSetti
 				continue
 			}
 			for _, item := range items {
+				if settings.RankingStrengthMin > 0 {
+					str, _ := strconv.ParseFloat(item.Strength, 64)
+					if str < settings.RankingStrengthMin {
+						continue
+					}
+				}
 				all = append(all, RankItem{
 					DataRank: item.DataRank, StockCode: item.StockCode,
 					StockName: item.StockName, CurrentPrice: item.CurrentPrice,
 					Volume: item.Volume, RankingType: "strength",
+					Strength: item.Strength,
 				})
 			}
 
@@ -381,10 +395,17 @@ func (e *Engine) getRankings(ctx context.Context, settings database.TradingSetti
 				continue
 			}
 			for _, item := range items {
+				if settings.RankingExecCountNetBuyOnly {
+					netBuy, _ := strconv.ParseFloat(item.NetBuyQty, 64)
+					if netBuy <= 0 {
+						continue
+					}
+				}
 				all = append(all, RankItem{
 					DataRank: item.DataRank, StockCode: item.StockCode,
 					StockName: item.StockName, CurrentPrice: item.CurrentPrice,
 					Volume: item.Volume, RankingType: "exec_count",
+					NetBuyQty: item.NetBuyQty,
 				})
 			}
 
@@ -395,10 +416,20 @@ func (e *Engine) getRankings(ctx context.Context, settings database.TradingSetti
 				continue
 			}
 			for _, item := range items {
+				if settings.RankingDisparityD20Min > 0 || settings.RankingDisparityD20Max > 0 {
+					d20, _ := strconv.ParseFloat(item.D20, 64)
+					if settings.RankingDisparityD20Min > 0 && d20 < settings.RankingDisparityD20Min {
+						continue
+					}
+					if settings.RankingDisparityD20Max > 0 && d20 > settings.RankingDisparityD20Max {
+						continue
+					}
+				}
 				all = append(all, RankItem{
 					DataRank: item.DataRank, StockCode: item.StockCode,
 					StockName: item.StockName, CurrentPrice: item.CurrentPrice,
 					Volume: item.Volume, RankingType: "disparity",
+					DisparityD20: item.D20,
 				})
 			}
 		}

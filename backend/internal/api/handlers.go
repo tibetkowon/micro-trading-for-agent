@@ -417,18 +417,23 @@ func (h *Handler) GetSettings(c *gin.Context) {
 		"trading_enabled":      tradingEnabled,
 		"ranking_excl_cls":     rankingExclCls,
 		// Autonomous trading settings
-		"take_profit_pct":              ts.TakeProfitPct,
-		"stop_loss_pct":                ts.StopLossPct,
-		"ranking_types":                ts.RankingTypes,
-		"ranking_price_min":            ts.RankingPriceMin,
-		"ranking_price_max":            ts.RankingPriceMax,
-		"max_positions":                ts.MaxPositions,
-		"order_amount_pct":             ts.OrderAmountPct,
-		"sell_conditions":              ts.SellConditions,
-		"indicator_check_interval_min": ts.IndicatorCheckIntervalMin,
-		"indicator_rsi_sell_threshold": ts.IndicatorRSISellThreshold,
-		"indicator_macd_bearish_sell":  ts.IndicatorMACDBearishSell,
-		"claude_model":                 ts.ClaudeModel,
+		"take_profit_pct":                ts.TakeProfitPct,
+		"stop_loss_pct":                  ts.StopLossPct,
+		"ranking_types":                  ts.RankingTypes,
+		"ranking_price_min":              ts.RankingPriceMin,
+		"ranking_price_max":              ts.RankingPriceMax,
+		"max_positions":                  ts.MaxPositions,
+		"order_amount_pct":               ts.OrderAmountPct,
+		"sell_conditions":                ts.SellConditions,
+		"indicator_check_interval_min":   ts.IndicatorCheckIntervalMin,
+		"indicator_rsi_sell_threshold":   ts.IndicatorRSISellThreshold,
+		"indicator_macd_bearish_sell":    ts.IndicatorMACDBearishSell,
+		"claude_model":                   ts.ClaudeModel,
+		"ranking_volume_min_incrrate":    ts.RankingVolumeMinIncrRate,
+		"ranking_strength_min":           ts.RankingStrengthMin,
+		"ranking_execcount_net_buy_only": ts.RankingExecCountNetBuyOnly,
+		"ranking_disparity_d20_min":      ts.RankingDisparityD20Min,
+		"ranking_disparity_d20_max":      ts.RankingDisparityD20Max,
 	})
 }
 
@@ -438,18 +443,23 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 		TradingEnabled *bool  `json:"trading_enabled"`
 		RankingExclCls string `json:"ranking_excl_cls"`
 		// Autonomous trading settings (all optional)
-		TakeProfitPct             *float64 `json:"take_profit_pct"`
-		StopLossPct               *float64 `json:"stop_loss_pct"`
-		RankingTypes              []string `json:"ranking_types"`
-		RankingPriceMin           string   `json:"ranking_price_min"`
-		RankingPriceMax           string   `json:"ranking_price_max"`
-		MaxPositions              *int     `json:"max_positions"`
-		OrderAmountPct            *float64 `json:"order_amount_pct"`
-		SellConditions            []string `json:"sell_conditions"`
-		IndicatorCheckIntervalMin *int     `json:"indicator_check_interval_min"`
-		IndicatorRSISellThreshold *float64 `json:"indicator_rsi_sell_threshold"`
-		IndicatorMACDBearishSell  *bool    `json:"indicator_macd_bearish_sell"`
-		ClaudeModel               string   `json:"claude_model"`
+		TakeProfitPct              *float64 `json:"take_profit_pct"`
+		StopLossPct                *float64 `json:"stop_loss_pct"`
+		RankingTypes               []string `json:"ranking_types"`
+		RankingPriceMin            string   `json:"ranking_price_min"`
+		RankingPriceMax            string   `json:"ranking_price_max"`
+		MaxPositions               *int     `json:"max_positions"`
+		OrderAmountPct             *float64 `json:"order_amount_pct"`
+		SellConditions             []string `json:"sell_conditions"`
+		IndicatorCheckIntervalMin  *int     `json:"indicator_check_interval_min"`
+		IndicatorRSISellThreshold  *float64 `json:"indicator_rsi_sell_threshold"`
+		IndicatorMACDBearishSell   *bool    `json:"indicator_macd_bearish_sell"`
+		ClaudeModel                string   `json:"claude_model"`
+		RankingVolumeMinIncrRate   *float64 `json:"ranking_volume_min_incrrate"`
+		RankingStrengthMin         *float64 `json:"ranking_strength_min"`
+		RankingExecCountNetBuyOnly *bool    `json:"ranking_execcount_net_buy_only"`
+		RankingDisparityD20Min     *float64 `json:"ranking_disparity_d20_min"`
+		RankingDisparityD20Max     *float64 `json:"ranking_disparity_d20_max"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -551,6 +561,35 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 	}
 	if req.ClaudeModel != "" {
 		if !save("claude_model", req.ClaudeModel) {
+			return
+		}
+	}
+	if req.RankingVolumeMinIncrRate != nil {
+		if !save("ranking_volume_min_incrrate", strconv.FormatFloat(*req.RankingVolumeMinIncrRate, 'f', -1, 64)) {
+			return
+		}
+	}
+	if req.RankingStrengthMin != nil {
+		if !save("ranking_strength_min", strconv.FormatFloat(*req.RankingStrengthMin, 'f', -1, 64)) {
+			return
+		}
+	}
+	if req.RankingExecCountNetBuyOnly != nil {
+		val := "false"
+		if *req.RankingExecCountNetBuyOnly {
+			val = "true"
+		}
+		if !save("ranking_execcount_net_buy_only", val) {
+			return
+		}
+	}
+	if req.RankingDisparityD20Min != nil {
+		if !save("ranking_disparity_d20_min", strconv.FormatFloat(*req.RankingDisparityD20Min, 'f', -1, 64)) {
+			return
+		}
+	}
+	if req.RankingDisparityD20Max != nil {
+		if !save("ranking_disparity_d20_max", strconv.FormatFloat(*req.RankingDisparityD20Max, 'f', -1, 64)) {
 			return
 		}
 	}

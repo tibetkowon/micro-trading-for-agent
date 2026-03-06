@@ -80,6 +80,12 @@ export default function Settings() {
   const [rsiThreshold, setRsiThreshold] = useState('70')
   const [macdBearish, setMacdBearish] = useState(false)
   const [claudeModel, setClaudeModel] = useState('claude-sonnet-4-6')
+  // 순위별 필터
+  const [volumeMinIncrRate, setVolumeMinIncrRate] = useState('0')
+  const [strengthMin, setStrengthMin] = useState('100')
+  const [execCountNetBuyOnly, setExecCountNetBuyOnly] = useState(true)
+  const [disparityD20Min, setDisparityD20Min] = useState('0')
+  const [disparityD20Max, setDisparityD20Max] = useState('0')
 
   const [saving, setSaving] = useState(false)
   const [saveResult, setSaveResult] = useState(null)
@@ -103,6 +109,11 @@ export default function Settings() {
     if (data.indicator_rsi_sell_threshold != null) setRsiThreshold(String(data.indicator_rsi_sell_threshold))
     if (data.indicator_macd_bearish_sell != null) setMacdBearish(data.indicator_macd_bearish_sell)
     if (data.claude_model) setClaudeModel(data.claude_model)
+    if (data.ranking_volume_min_incrrate != null) setVolumeMinIncrRate(String(data.ranking_volume_min_incrrate))
+    if (data.ranking_strength_min != null) setStrengthMin(String(data.ranking_strength_min))
+    if (data.ranking_execcount_net_buy_only != null) setExecCountNetBuyOnly(data.ranking_execcount_net_buy_only)
+    if (data.ranking_disparity_d20_min != null) setDisparityD20Min(String(data.ranking_disparity_d20_min))
+    if (data.ranking_disparity_d20_max != null) setDisparityD20Max(String(data.ranking_disparity_d20_max))
   }, [data])
 
   function toggleBit(i) {
@@ -154,6 +165,11 @@ export default function Settings() {
       indicator_rsi_sell_threshold: parseFloat(rsiThreshold) || 70,
       indicator_macd_bearish_sell: macdBearish,
       claude_model: claudeModel,
+      ranking_volume_min_incrrate: parseFloat(volumeMinIncrRate) || 0,
+      ranking_strength_min: parseFloat(strengthMin) || 0,
+      ranking_execcount_net_buy_only: execCountNetBuyOnly,
+      ranking_disparity_d20_min: parseFloat(disparityD20Min) || 0,
+      ranking_disparity_d20_max: parseFloat(disparityD20Max) || 0,
     }
 
     try {
@@ -288,24 +304,10 @@ export default function Settings() {
         </div>
 
         {/* 순위 조회 설정 */}
-        <div className="bg-gray-900 border border-gray-800 rounded-lg p-5 space-y-3">
+        <div className="bg-gray-900 border border-gray-800 rounded-lg p-5 space-y-4">
           <p className="text-xs text-gray-500 uppercase tracking-wider">순위 조회 설정</p>
 
-          <div className="grid grid-cols-2 gap-2">
-            {RANKING_TYPES.map(({ value, label }) => (
-              <label key={value} className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={rankingTypes.includes(value)}
-                  onChange={() => toggleRankingType(value)}
-                  className="w-4 h-4 rounded border-gray-600 bg-gray-800 text-blue-500"
-                />
-                <span className="text-sm text-gray-300">{label}</span>
-              </label>
-            ))}
-          </div>
-
-          <div className="grid grid-cols-2 gap-4 mt-2">
+          <div className="grid grid-cols-2 gap-4">
             <label className="space-y-1">
               <span className="text-xs text-gray-400">최소 주가 (원)</span>
               <input
@@ -324,6 +326,101 @@ export default function Settings() {
                 className="w-full px-3 py-1.5 bg-gray-800 border border-gray-700 rounded text-sm text-gray-200"
               />
             </label>
+          </div>
+
+          {/* 거래량 순위 */}
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <input type="checkbox" checked={rankingTypes.includes('volume')}
+                onChange={() => toggleRankingType('volume')}
+                className="w-4 h-4 rounded border-gray-600 bg-gray-800 text-blue-500" />
+              <span className="text-sm text-gray-300 font-medium">거래량 순위</span>
+            </div>
+            {rankingTypes.includes('volume') && (
+              <div className="ml-6">
+                <label className="space-y-1">
+                  <span className="text-xs text-gray-400">전일대비 거래량 증가율 최솟값 (%, 0=필터없음)</span>
+                  <input type="number" step="10" min="0"
+                    value={volumeMinIncrRate}
+                    onChange={(e) => setVolumeMinIncrRate(e.target.value)}
+                    className="w-40 px-3 py-1.5 bg-gray-800 border border-gray-700 rounded text-sm text-gray-200"
+                  />
+                </label>
+              </div>
+            )}
+          </div>
+
+          {/* 체결강도 순위 */}
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <input type="checkbox" checked={rankingTypes.includes('strength')}
+                onChange={() => toggleRankingType('strength')}
+                className="w-4 h-4 rounded border-gray-600 bg-gray-800 text-blue-500" />
+              <span className="text-sm text-gray-300 font-medium">체결강도 순위</span>
+            </div>
+            {rankingTypes.includes('strength') && (
+              <div className="ml-6">
+                <label className="space-y-1">
+                  <span className="text-xs text-gray-400">최소 체결강도 (%, 100=매수우세 이상, 0=필터없음)</span>
+                  <input type="number" step="5" min="0"
+                    value={strengthMin}
+                    onChange={(e) => setStrengthMin(e.target.value)}
+                    className="w-40 px-3 py-1.5 bg-gray-800 border border-gray-700 rounded text-sm text-gray-200"
+                  />
+                </label>
+              </div>
+            )}
+          </div>
+
+          {/* 대량체결 순위 */}
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <input type="checkbox" checked={rankingTypes.includes('exec_count')}
+                onChange={() => toggleRankingType('exec_count')}
+                className="w-4 h-4 rounded border-gray-600 bg-gray-800 text-blue-500" />
+              <span className="text-sm text-gray-300 font-medium">대량체결 순위</span>
+            </div>
+            {rankingTypes.includes('exec_count') && (
+              <div className="ml-6">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" checked={execCountNetBuyOnly}
+                    onChange={(e) => setExecCountNetBuyOnly(e.target.checked)}
+                    className="w-4 h-4 rounded border-gray-600 bg-gray-800 text-blue-500" />
+                  <span className="text-sm text-gray-300">순매수 우세 종목만 (순매수체결량 &gt; 0)</span>
+                </label>
+              </div>
+            )}
+          </div>
+
+          {/* 이격도 순위 */}
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <input type="checkbox" checked={rankingTypes.includes('disparity')}
+                onChange={() => toggleRankingType('disparity')}
+                className="w-4 h-4 rounded border-gray-600 bg-gray-800 text-blue-500" />
+              <span className="text-sm text-gray-300 font-medium">이격도 순위</span>
+            </div>
+            {rankingTypes.includes('disparity') && (
+              <div className="ml-6 flex items-center gap-3">
+                <label className="space-y-1">
+                  <span className="text-xs text-gray-400">20일 이격도 최솟값 (0=필터없음)</span>
+                  <input type="number" step="1" min="0"
+                    value={disparityD20Min}
+                    onChange={(e) => setDisparityD20Min(e.target.value)}
+                    className="w-28 px-3 py-1.5 bg-gray-800 border border-gray-700 rounded text-sm text-gray-200"
+                  />
+                </label>
+                <span className="text-gray-500 mt-4">~</span>
+                <label className="space-y-1">
+                  <span className="text-xs text-gray-400">최댓값 (0=필터없음)</span>
+                  <input type="number" step="1" min="0"
+                    value={disparityD20Max}
+                    onChange={(e) => setDisparityD20Max(e.target.value)}
+                    className="w-28 px-3 py-1.5 bg-gray-800 border border-gray-700 rounded text-sm text-gray-200"
+                  />
+                </label>
+              </div>
+            )}
           </div>
         </div>
 

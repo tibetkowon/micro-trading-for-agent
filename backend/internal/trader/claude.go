@@ -17,7 +17,11 @@ type RankItem struct {
 	StockName    string `json:"stock_name"`
 	CurrentPrice string `json:"current_price"`
 	Volume       string `json:"volume"`
-	RankingType  string `json:"ranking_type"` // volume, strength, exec_count, disparity
+	RankingType  string `json:"ranking_type"`            // volume, strength, exec_count, disparity
+	VolIncrRate  string `json:"vol_incr_rate,omitempty"` // 거래량 증가율 % (volume)
+	Strength     string `json:"strength,omitempty"`      // 체결강도 % (strength)
+	NetBuyQty    string `json:"net_buy_qty,omitempty"`   // 순매수체결량 (exec_count)
+	DisparityD20 string `json:"disparity_d20,omitempty"` // 20일 이격도 (disparity)
 }
 
 // ClaudeClient wraps the Anthropic API for trading decisions.
