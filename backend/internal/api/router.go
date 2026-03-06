@@ -33,16 +33,6 @@ func SetupRouter(h *Handler, frontendDist string) *gin.Engine {
 
 		api.GET("/server/status", h.GetServerStatus)
 
-		debug := api.Group("/debug")
-		{
-			debug.GET("/balance", h.DebugRawBalance)
-			debug.POST("/ws", h.DebugWSConnect)
-			debug.DELETE("/ws", h.DebugWSDisconnect)
-			debug.POST("/price", h.DebugInjectPrice)
-			debug.POST("/monitor", h.DebugRegisterMonitor)
-			debug.POST("/liquidate", h.DebugLiquidate)
-		}
-
 		monitorGroup := api.Group("/monitor")
 		{
 			monitorGroup.GET("/positions", h.GetMonitorPositions)
