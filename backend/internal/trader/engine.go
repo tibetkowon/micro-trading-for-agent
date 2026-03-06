@@ -174,7 +174,22 @@ func (e *Engine) selectAndBuy(ctx context.Context, settings database.TradingSett
 	}
 	if len(rankings) == 0 {
 		e.setState(StateMonitoring)
-		return fmt.Errorf("no ranking results")
+		return fmt.Errorf("no ranking results after intersection filter")
+	}
+
+	// Enrich each candidate with technical indicators (MA5/MA20/RSI/MACD).
+	for i, r := range rankings {
+		info, err := agent.GetStockInfo(ctx, e.kisClient, r.StockCode)
+		if err != nil {
+			logger.Warn("engine: GetStockInfo failed, skipping indicators",
+				map[string]any{"stock_code": r.StockCode, "error": err.Error()})
+			continue
+		}
+		rankings[i].MA5 = info.MA5
+		rankings[i].MA20 = info.MA20
+		rankings[i].RSI14 = info.RSI14
+		rankings[i].MACDLine = info.MACDLine
+		rankings[i].MACDSignal = info.MACDSignal
 	}
 
 	// Get available cash.

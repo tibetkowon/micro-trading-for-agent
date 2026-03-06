@@ -10,18 +10,25 @@ import (
 	"github.com/anthropics/anthropic-sdk-go/option"
 )
 
-// RankItem is a unified representation of a stock from any ranking API.
+// RankItem is a unified representation of a stock from any ranking API,
+// enriched with technical indicators from GetStockInfo.
 type RankItem struct {
 	DataRank     string `json:"data_rank"`
 	StockCode    string `json:"stock_code"`
 	StockName    string `json:"stock_name"`
 	CurrentPrice string `json:"current_price"`
 	Volume       string `json:"volume"`
-	RankingType  string `json:"ranking_type"`            // volume, strength, exec_count, disparity
+	RankingType  string `json:"ranking_type"`            // e.g. "volume+strength"
 	VolIncrRate  string `json:"vol_incr_rate,omitempty"` // 거래량 증가율 % (volume)
 	Strength     string `json:"strength,omitempty"`      // 체결강도 % (strength)
 	NetBuyQty    string `json:"net_buy_qty,omitempty"`   // 순매수체결량 (exec_count)
 	DisparityD20 string `json:"disparity_d20,omitempty"` // 20일 이격도 (disparity)
+	// Technical indicators from GetStockInfo
+	MA5        float64 `json:"ma5,omitempty"`
+	MA20       float64 `json:"ma20,omitempty"`
+	RSI14      float64 `json:"rsi14,omitempty"`
+	MACDLine   float64 `json:"macd_line,omitempty"`
+	MACDSignal float64 `json:"macd_signal,omitempty"`
 }
 
 // ClaudeClient wraps the Anthropic API for trading decisions.
