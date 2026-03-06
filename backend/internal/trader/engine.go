@@ -336,15 +336,20 @@ func (e *Engine) getTodayTradedCodes(ctx context.Context) []string {
 	return codes
 }
 
-// getRankings calls the configured ranking APIs, applies filters, and returns a unified RankItem list.
+// getRankings calls each configured ranking API, applies per-type filters,
+// then returns only stocks that passed ALL enabled ranking types (AND logic).
+// Fields from each ranking type are merged into a single RankItem per stock.
 func (e *Engine) getRankings(ctx context.Context, settings database.TradingSettings) ([]RankItem, error) {
 	excludeCls := e.db.GetSetting(ctx, "ranking_excl_cls")
 	priceMin := settings.RankingPriceMin
 	priceMax := settings.RankingPriceMax
 
-	var all []RankItem
+	// byType holds filtered results per ranking type: stockCode → RankItem
+	byType := make(map[string]map[string]RankItem) // rankingType → code → item
 
 	for _, rt := range settings.RankingTypes {
+		byType[rt] = make(map[string]RankItem)
+
 		switch rt {
 		case "volume":
 			items, err := e.kisClient.GetVolumeRank(ctx, "J", "0", priceMin, priceMax, excludeCls)
@@ -359,12 +364,11 @@ func (e *Engine) getRankings(ctx context.Context, settings database.TradingSetti
 						continue
 					}
 				}
-				all = append(all, RankItem{
+				byType[rt][item.StockCode] = RankItem{
 					DataRank: item.DataRank, StockCode: item.StockCode,
 					StockName: item.StockName, CurrentPrice: item.CurrentPrice,
-					Volume: item.Volume, RankingType: "volume",
-					VolIncrRate: item.VolIncrRate,
-				})
+					Volume: item.Volume, VolIncrRate: item.VolIncrRate,
+				}
 			}
 
 		case "strength":
@@ -380,12 +384,11 @@ func (e *Engine) getRankings(ctx context.Context, settings database.TradingSetti
 						continue
 					}
 				}
-				all = append(all, RankItem{
+				byType[rt][item.StockCode] = RankItem{
 					DataRank: item.DataRank, StockCode: item.StockCode,
 					StockName: item.StockName, CurrentPrice: item.CurrentPrice,
-					Volume: item.Volume, RankingType: "strength",
-					Strength: item.Strength,
-				})
+					Volume: item.Volume, Strength: item.Strength,
+				}
 			}
 
 		case "exec_count":
@@ -401,12 +404,11 @@ func (e *Engine) getRankings(ctx context.Context, settings database.TradingSetti
 						continue
 					}
 				}
-				all = append(all, RankItem{
+				byType[rt][item.StockCode] = RankItem{
 					DataRank: item.DataRank, StockCode: item.StockCode,
 					StockName: item.StockName, CurrentPrice: item.CurrentPrice,
-					Volume: item.Volume, RankingType: "exec_count",
-					NetBuyQty: item.NetBuyQty,
-				})
+					Volume: item.Volume, NetBuyQty: item.NetBuyQty,
+				}
 			}
 
 		case "disparity":
@@ -425,17 +427,73 @@ func (e *Engine) getRankings(ctx context.Context, settings database.TradingSetti
 						continue
 					}
 				}
-				all = append(all, RankItem{
+				byType[rt][item.StockCode] = RankItem{
 					DataRank: item.DataRank, StockCode: item.StockCode,
 					StockName: item.StockName, CurrentPrice: item.CurrentPrice,
-					Volume: item.Volume, RankingType: "disparity",
-					DisparityD20: item.D20,
-				})
+					Volume: item.Volume, DisparityD20: item.D20,
+				}
 			}
 		}
 	}
 
-	return all, nil
+	if len(byType) == 0 {
+		return nil, fmt.Errorf("no ranking types configured")
+	}
+
+	// AND intersection: keep only stocks present in every enabled ranking type.
+	// Use the first type as seed, then filter against the rest.
+	var seedType string
+	for k := range byType {
+		seedType = k
+		break
+	}
+
+	var result []RankItem
+	for code, base := range byType[seedType] {
+		inAll := true
+		for rt, m := range byType {
+			if rt == seedType {
+				continue
+			}
+			if _, ok := m[code]; !ok {
+				inAll = false
+				break
+			}
+		}
+		if !inAll {
+			continue
+		}
+
+		// Merge fields from all ranking types into one RankItem.
+		merged := base
+		merged.RankingType = strings.Join(settings.RankingTypes, "+")
+		for rt, m := range byType {
+			if rt == seedType {
+				continue
+			}
+			other := m[code]
+			if other.VolIncrRate != "" {
+				merged.VolIncrRate = other.VolIncrRate
+			}
+			if other.Strength != "" {
+				merged.Strength = other.Strength
+			}
+			if other.NetBuyQty != "" {
+				merged.NetBuyQty = other.NetBuyQty
+			}
+			if other.DisparityD20 != "" {
+				merged.DisparityD20 = other.DisparityD20
+			}
+		}
+		result = append(result, merged)
+	}
+
+	logger.Info("engine: rankings intersection", map[string]any{
+		"types": settings.RankingTypes,
+		"count": len(result),
+	})
+
+	return result, nil
 }
 
 // tradeRow holds a matched buy+sell pair for report generation.
