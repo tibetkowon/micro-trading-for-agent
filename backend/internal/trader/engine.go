@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -406,7 +407,18 @@ func (e *Engine) getRankings(ctx context.Context, settings database.TradingSetti
 	return all, nil
 }
 
-// GenerateDailyReport generates a Korean markdown daily report via Claude.
+// tradeRow holds a matched buy+sell pair for report generation.
+type tradeRow struct {
+	StockName string
+	BuyPrice  float64
+	SellPrice float64
+	Qty       int
+	PnL       float64
+	PnLPct    float64
+}
+
+// GenerateDailyReport builds a markdown report: server renders the table,
+// Claude writes the analysis section.
 func (e *Engine) GenerateDailyReport(ctx context.Context) (string, error) {
 	if e.claude == nil {
 		return "", fmt.Errorf("claude client not configured")
@@ -415,31 +427,110 @@ func (e *Engine) GenerateDailyReport(ctx context.Context) (string, error) {
 	kst, _ := time.LoadLocation("Asia/Seoul")
 	today := time.Now().In(kst).Format("2006-01-02")
 
-	// Load today's orders from DB.
+	// Load today's FILLED orders from DB.
 	rows, err := e.db.QueryContext(ctx,
-		`SELECT stock_code, stock_name, order_type, qty, price, filled_price, status
-		 FROM orders WHERE date(created_at) = date(?) AND source = 'AGENT'
+		`SELECT stock_code, stock_name, order_type, qty, filled_price
+		 FROM orders
+		 WHERE date(created_at) = date(?) AND source = 'AGENT' AND status = 'FILLED'
 		 ORDER BY id`, today)
 	if err != nil {
 		return "", fmt.Errorf("load today's orders: %w", err)
 	}
 	defer rows.Close()
 
-	var trades []reportOrder
+	type orderRow struct {
+		Code        string
+		Name        string
+		Type        string
+		Qty         int
+		FilledPrice float64
+	}
+	var orders []orderRow
 	for rows.Next() {
-		var o reportOrder
-		if err := rows.Scan(&o.StockCode, &o.StockName, &o.OrderType,
-			&o.Qty, &o.Price, &o.FilledPrice, &o.Status); err == nil {
-			trades = append(trades, o)
+		var o orderRow
+		if err := rows.Scan(&o.Code, &o.Name, &o.Type, &o.Qty, &o.FilledPrice); err == nil {
+			orders = append(orders, o)
 		}
 	}
 
-	// Get current account balance.
-	totalEval, withdrawable := 0.0, 0.0
-	if summary, balErr := e.kisClient.GetInquireBalance(ctx); balErr == nil {
-		totalEval, _ = strconv.ParseFloat(summary.TotalEval, 64)
-		withdrawable, _ = strconv.ParseFloat(summary.DepositAmt, 64)
+	// Match BUY → SELL pairs per stock code (FIFO).
+	buyMap := map[string][]orderRow{}
+	var trades []tradeRow
+	for _, o := range orders {
+		if o.Type == "BUY" {
+			buyMap[o.Code] = append(buyMap[o.Code], o)
+		} else if o.Type == "SELL" {
+			if buys := buyMap[o.Code]; len(buys) > 0 {
+				buy := buys[0]
+				buyMap[o.Code] = buys[1:]
+				pnl := (o.FilledPrice - buy.FilledPrice) * float64(o.Qty)
+				pnlPct := (o.FilledPrice - buy.FilledPrice) / buy.FilledPrice * 100
+				trades = append(trades, tradeRow{
+					StockName: buy.Name,
+					BuyPrice:  buy.FilledPrice,
+					SellPrice: o.FilledPrice,
+					Qty:       o.Qty,
+					PnL:       pnl,
+					PnLPct:    pnlPct,
+				})
+			}
+		}
 	}
 
-	return e.claude.GenerateReport(ctx, today, trades, totalEval, withdrawable)
+	// Build markdown table.
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("# %s 트레이딩 리포트\n\n", today))
+	sb.WriteString("## 거래 결과\n\n")
+	if len(trades) == 0 {
+		sb.WriteString("오늘 완결된 거래가 없습니다.\n")
+	} else {
+		sb.WriteString("| 종목 | 매수가 | 매도가 | 수량 | 손익 | 수익률 |\n")
+		sb.WriteString("|------|--------|--------|------|------|--------|\n")
+		totalPnL := 0.0
+		winCount, lossCount := 0, 0
+		for _, t := range trades {
+			sign := "+"
+			if t.PnL < 0 {
+				sign = ""
+				lossCount++
+			} else {
+				winCount++
+			}
+			sb.WriteString(fmt.Sprintf("| %s | %,.0f | %,.0f | %d | %s%.0f원 | %s%.1f%% |\n",
+				t.StockName, t.BuyPrice, t.SellPrice, t.Qty, sign, t.PnL, sign, t.PnLPct))
+			totalPnL += t.PnL
+		}
+		sign := "+"
+		if totalPnL < 0 {
+			sign = ""
+		}
+		sb.WriteString(fmt.Sprintf("\n**총 실현 손익: %s%.0f원 | 승률: %d/%d**\n",
+			sign, totalPnL, winCount, len(trades)))
+
+		// Get account balance for Claude summary.
+		totalEval, withdrawable := 0.0, 0.0
+		if summary, balErr := e.kisClient.GetInquireBalance(ctx); balErr == nil {
+			totalEval, _ = strconv.ParseFloat(summary.TotalEval, 64)
+			withdrawable, _ = strconv.ParseFloat(summary.DepositAmt, 64)
+		}
+
+		// Claude writes the analysis section only.
+		analysis, claudeErr := e.claude.GenerateReport(ctx, ReportSummary{
+			Date:         today,
+			TotalPnL:     totalPnL,
+			WinCount:     winCount,
+			LossCount:    lossCount,
+			TotalEval:    totalEval,
+			Withdrawable: withdrawable,
+		})
+		if claudeErr != nil {
+			logger.Warn("report: claude analysis failed", map[string]any{"err": claudeErr.Error()})
+			analysis = "(AI 분석 생성 실패)"
+		}
+		sb.WriteString("\n## AI 분석\n\n")
+		sb.WriteString(analysis)
+		sb.WriteString("\n")
+	}
+
+	return sb.String(), nil
 }

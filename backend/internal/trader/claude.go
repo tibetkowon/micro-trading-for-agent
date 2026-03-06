@@ -57,23 +57,23 @@ func (c *ClaudeClient) SelectStock(
 	rankJSON, _ := json.Marshal(rankings)
 	excludeStr := strings.Join(excludedCodes, ", ")
 	if excludeStr == "" {
-		excludeStr = "(없음)"
+		excludeStr = "none"
 	}
 
-	prompt := fmt.Sprintf(`당신은 한국 주식 단타 트레이딩 AI입니다.
+	prompt := fmt.Sprintf(`You are a Korean stock intraday trading AI.
 
-아래 순위 데이터를 분석하여 매수할 종목 1개를 선정하세요.
+Analyze the ranking data below and select exactly 1 stock to buy for maximum same-day profit.
 
-**조건:**
-- 가용자금: %.0f원
-- 제외 종목 (오늘 이미 거래함): %s
-- 목표: 단기(당일) 수익 극대화
+Constraints:
+- Available cash: %.0f KRW
+- Excluded stocks (already traded today): %s
+- Goal: maximize intraday return
 
-**순위 데이터 (JSON):**
+Ranking data (JSON):
 %s
 
-**응답 형식 (반드시 JSON만 출력):**
-{"stock_code":"종목코드6자리","reason":"선정 이유 (한국어, 2문장 이내)"}`,
+Respond with ONLY a JSON object — no explanation, no markdown:
+{"stock_code":"6-digit code","reason":"선정 이유를 한국어로 2문장 이내로 작성"}`,
 		availableCash, excludeStr, string(rankJSON))
 
 	msg, err := c.client.Messages.New(ctx, anthropic.MessageNewParams{
@@ -113,38 +113,42 @@ func (c *ClaudeClient) SelectStock(
 	return resp.StockCode, resp.Reason, nil
 }
 
-// GenerateReport asks Claude to write a Korean markdown daily trading report.
-func (c *ClaudeClient) GenerateReport(
-	ctx context.Context,
-	date string,
-	trades []reportOrder,
-	totalEval float64,
-	withdrawable float64,
-) (string, error) {
-	tradesJSON, _ := json.Marshal(trades)
+// ReportSummary holds pre-computed trading stats passed to GenerateReport.
+type ReportSummary struct {
+	Date         string
+	TotalPnL     float64 // total realized profit/loss in KRW
+	WinCount     int
+	LossCount    int
+	TotalEval    float64
+	Withdrawable float64
+	TradeTable   string // pre-rendered markdown table
+}
 
-	prompt := fmt.Sprintf(`당신은 한국 주식 자동매매 시스템의 일일 리포트 작성 AI입니다.
+// GenerateReport asks Claude to write a short Korean analysis based on pre-computed stats.
+// The markdown table is already built by the engine; Claude only writes the analysis section.
+func (c *ClaudeClient) GenerateReport(ctx context.Context, s ReportSummary) (string, error) {
+	winRate := 0.0
+	total := s.WinCount + s.LossCount
+	if total > 0 {
+		winRate = float64(s.WinCount) / float64(total) * 100
+	}
 
-아래 데이터를 바탕으로 %s의 일일 트레이딩 리포트를 한국어 마크다운으로 작성하세요.
+	prompt := fmt.Sprintf(`You are a Korean stock auto-trading system analyst.
 
-**계좌 현황:**
-- 총 평가금액: %.0f원
-- 출금가능금액: %.0f원
+Based on the trading stats below, write a SHORT Korean analysis (3~5 sentences max).
+Do NOT reproduce the table. Focus on: overall assessment, what worked or didn't, and one actionable tip for tomorrow.
+Write in Korean.
 
-**오늘의 거래 내역 (JSON):**
-%s
-
-**작성 지침:**
-- ## 헤더로 섹션 구분
-- 종목별 매수/매도 결과, 손익, 수익률 정리
-- 전체 성과 요약 (총 실현 손익, 승률 등)
-- 내일을 위한 간단한 분석 및 조언
-- 간결하게 300자 이내`,
-		date, totalEval, withdrawable, string(tradesJSON))
+Date: %s
+Total realized P&L: %.0f KRW
+Win/Loss: %d wins / %d losses (win rate %.1f%%)
+Account total eval: %.0f KRW
+Withdrawable: %.0f KRW`,
+		s.Date, s.TotalPnL, s.WinCount, s.LossCount, winRate, s.TotalEval, s.Withdrawable)
 
 	msg, err := c.client.Messages.New(ctx, anthropic.MessageNewParams{
 		Model:     anthropic.Model(c.model),
-		MaxTokens: 1024,
+		MaxTokens: 512,
 		Messages: []anthropic.MessageParam{
 			anthropic.NewUserMessage(anthropic.NewTextBlock(prompt)),
 		},
@@ -158,15 +162,4 @@ func (c *ClaudeClient) GenerateReport(
 	}
 
 	return msg.Content[0].AsText().Text, nil
-}
-
-// reportOrder is a simplified order view for the report prompt.
-type reportOrder struct {
-	StockCode   string  `json:"stock_code"`
-	StockName   string  `json:"stock_name"`
-	OrderType   string  `json:"order_type"`
-	Qty         int     `json:"qty"`
-	Price       float64 `json:"price"`
-	FilledPrice float64 `json:"filled_price"`
-	Status      string  `json:"status"`
 }
