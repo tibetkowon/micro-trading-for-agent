@@ -48,21 +48,22 @@ func NewClaudeClient(apiKey, model string) *ClaudeClient {
 	}
 }
 
-type selectStockResponse struct {
+// StockCandidate is one entry in Claude's ranked selection list.
+type StockCandidate struct {
 	StockCode string `json:"stock_code"`
 	Reason    string `json:"reason"`
 }
 
-// SelectStock asks Claude to pick the best stock from the ranking list.
-// Returns the selected stock code, reason, and any error.
-func (c *ClaudeClient) SelectStock(
+// SelectStocks asks Claude to rank all viable candidates from the ranking list.
+// Returns an ordered slice — index 0 is the top pick. Engine tries them in order.
+func (c *ClaudeClient) SelectStocks(
 	ctx context.Context,
 	rankings []RankItem,
 	availableCash float64,
 	excludedCodes []string,
-) (stockCode, reason string, err error) {
+) ([]StockCandidate, error) {
 	if len(rankings) == 0 {
-		return "", "", fmt.Errorf("ranking list is empty")
+		return nil, fmt.Errorf("ranking list is empty")
 	}
 
 	rankJSON, _ := json.Marshal(rankings)
@@ -73,39 +74,39 @@ func (c *ClaudeClient) SelectStock(
 
 	prompt := fmt.Sprintf(`You are a Korean stock intraday trading AI.
 
-Analyze the ranking data below and select exactly 1 stock to buy for maximum same-day profit.
+Analyze the ranking data below and rank ALL viable stocks for same-day trading, best first.
+Exclude any stock in the excluded list.
 
 Constraints:
 - Available cash: %.0f KRW
 - Excluded stocks (already traded today): %s
 - Goal: maximize intraday return
+- Consider: MA trend (price vs MA5/MA20), RSI (avoid >70), MACD direction, volume momentum
 
 Ranking data (JSON):
 %s
 
-Respond with ONLY a JSON object — no explanation, no markdown:
-{"stock_code":"6-digit code","reason":"선정 이유를 한국어로 2문장 이내로 작성"}`,
+Respond with ONLY a JSON array — no explanation, no markdown.
+Order from best to worst. Include only stocks worth buying (skip clearly bad ones):
+[{"stock_code":"6-digit code","reason":"한국어로 1문장"},...]`,
 		availableCash, excludeStr, string(rankJSON))
 
 	msg, err := c.client.Messages.New(ctx, anthropic.MessageNewParams{
 		Model:     anthropic.Model(c.model),
-		MaxTokens: 256,
+		MaxTokens: 512,
 		Messages: []anthropic.MessageParam{
 			anthropic.NewUserMessage(anthropic.NewTextBlock(prompt)),
 		},
 	})
 	if err != nil {
-		return "", "", fmt.Errorf("claude SelectStock API error: %w", err)
+		return nil, fmt.Errorf("claude SelectStocks API error: %w", err)
 	}
 
 	if len(msg.Content) == 0 {
-		return "", "", fmt.Errorf("claude returned empty response")
+		return nil, fmt.Errorf("claude returned empty response")
 	}
 
-	raw := msg.Content[0].AsText().Text
-	raw = strings.TrimSpace(raw)
-
-	// Strip markdown code fence if present
+	raw := strings.TrimSpace(msg.Content[0].AsText().Text)
 	if strings.HasPrefix(raw, "```") {
 		lines := strings.Split(raw, "\n")
 		if len(lines) >= 3 {
@@ -113,15 +114,15 @@ Respond with ONLY a JSON object — no explanation, no markdown:
 		}
 	}
 
-	var resp selectStockResponse
-	if jsonErr := json.Unmarshal([]byte(raw), &resp); jsonErr != nil {
-		return "", "", fmt.Errorf("claude response parse error: %w (raw: %s)", jsonErr, raw)
+	var candidates []StockCandidate
+	if err := json.Unmarshal([]byte(raw), &candidates); err != nil {
+		return nil, fmt.Errorf("claude response parse error: %w (raw: %s)", err, raw)
 	}
-	if resp.StockCode == "" {
-		return "", "", fmt.Errorf("claude returned empty stock_code (raw: %s)", raw)
+	if len(candidates) == 0 {
+		return nil, fmt.Errorf("claude returned empty candidate list")
 	}
 
-	return resp.StockCode, resp.Reason, nil
+	return candidates, nil
 }
 
 // ReportSummary holds pre-computed trading stats passed to GenerateReport.

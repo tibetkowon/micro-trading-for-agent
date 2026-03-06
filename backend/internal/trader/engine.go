@@ -204,64 +204,83 @@ func (e *Engine) selectAndBuy(ctx context.Context, settings database.TradingSett
 		return fmt.Errorf("no available cash")
 	}
 
-	// Ask Claude to select a stock.
-	stockCode, reason, err := e.claude.SelectStock(ctx, rankings, availableCash, excludedCodes)
+	// Ask Claude to rank all viable candidates (single API call).
+	candidates, err := e.claude.SelectStocks(ctx, rankings, availableCash, excludedCodes)
 	if err != nil {
 		e.setState(StateMonitoring)
-		return fmt.Errorf("SelectStock: %w", err)
+		return fmt.Errorf("SelectStocks: %w", err)
 	}
-	logger.Info("engine: Claude selected stock",
-		map[string]any{"stock_code": stockCode, "reason": reason})
+	logger.Info("engine: Claude ranked candidates",
+		map[string]any{"count": len(candidates)})
 
-	// Check orderability.
-	feasibility, err := agent.CheckOrderFeasibility(ctx, e.kisClient, stockCode)
-	if err != nil {
-		e.setState(StateMonitoring)
-		return fmt.Errorf("CheckOrderFeasibility(%s): %w", stockCode, err)
-	}
-	if feasibility.OrderableQty <= 0 {
-		e.setState(StateMonitoring)
-		return fmt.Errorf("stock %s not orderable (qty=0)", stockCode)
-	}
+	// Try candidates in order until one succeeds.
+	var (
+		stockCode   string
+		filledPrice float64
+		filledQty   int
+		result      *agent.PlaceOrderResult
+	)
+	for i, candidate := range candidates {
+		code := candidate.StockCode
+		logger.Info("engine: trying candidate",
+			map[string]any{"rank": i + 1, "stock_code": code, "reason": candidate.Reason})
 
-	// Apply order amount ratio.
-	qty := int(float64(feasibility.OrderableQty) * settings.OrderAmountPct / 100)
-	if qty <= 0 {
-		qty = 1
-	}
+		e.setState(StateOrdering)
 
-	e.setState(StateOrdering)
-
-	// Place market buy order.
-	result, err := agent.PlaceOrder(ctx, e.kisClient, e.db, agent.PlaceOrderRequest{
-		StockCode: stockCode,
-		OrderType: models.OrderTypeBuy,
-		Qty:       qty,
-		Price:     0,
-		OrderDivn: "01", // 시장가
-		TargetPct: settings.TakeProfitPct,
-		StopPct:   settings.StopLossPct,
-	})
-	if err != nil {
-		e.setState(StateMonitoring)
-		return fmt.Errorf("PlaceOrder(%s): %w", stockCode, err)
-	}
-
-	e.setState(StateWaitingFill)
-
-	// Wait for fill on ExecCh (max 5 minutes).
-	fillCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
-	defer cancel()
-
-	filledPrice, filledQty, filled := e.waitForFill(fillCtx, result.KISOrderID)
-	if !filled {
-		// Timeout: cancel the order.
-		if _, cancelErr := agent.CancelOrder(ctx, e.kisClient, e.db, result.OrderID); cancelErr != nil {
-			logger.Warn("engine: cancel order failed after fill timeout",
-				map[string]any{"order_id": result.OrderID, "error": cancelErr.Error()})
+		feasibility, ferr := agent.CheckOrderFeasibility(ctx, e.kisClient, code)
+		if ferr != nil || feasibility.OrderableQty <= 0 {
+			logger.Warn("engine: candidate not orderable, skipping",
+				map[string]any{"stock_code": code})
+			continue
 		}
+
+		qty := int(float64(feasibility.OrderableQty) * settings.OrderAmountPct / 100)
+		if qty <= 0 {
+			qty = 1
+		}
+
+		res, perr := agent.PlaceOrder(ctx, e.kisClient, e.db, agent.PlaceOrderRequest{
+			StockCode: code,
+			OrderType: models.OrderTypeBuy,
+			Qty:       qty,
+			Price:     0,
+			OrderDivn: "01",
+			TargetPct: settings.TakeProfitPct,
+			StopPct:   settings.StopLossPct,
+		})
+		if perr != nil {
+			logger.Warn("engine: PlaceOrder failed, skipping",
+				map[string]any{"stock_code": code, "error": perr.Error()})
+			continue
+		}
+
+		e.setState(StateWaitingFill)
+
+		fillCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+		fp, fq, filled := e.waitForFill(fillCtx, res.KISOrderID)
+		cancel()
+
+		if !filled {
+			if _, cancelErr := agent.CancelOrder(ctx, e.kisClient, e.db, res.OrderID); cancelErr != nil {
+				logger.Warn("engine: cancel order failed after fill timeout",
+					map[string]any{"order_id": res.OrderID, "error": cancelErr.Error()})
+			}
+			logger.Warn("engine: fill timeout, trying next candidate",
+				map[string]any{"stock_code": code})
+			continue
+		}
+
+		// Success.
+		stockCode = code
+		filledPrice = fp
+		filledQty = fq
+		result = res
+		break
+	}
+
+	if result == nil {
 		e.setState(StateMonitoring)
-		return fmt.Errorf("fill timeout for %s (order %d cancelled)", stockCode, result.OrderID)
+		return fmt.Errorf("all %d candidates failed", len(candidates))
 	}
 
 	logger.Info("engine: order filled",
