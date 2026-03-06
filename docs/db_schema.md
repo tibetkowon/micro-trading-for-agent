@@ -34,6 +34,11 @@
 | `indicator_rsi_sell_threshold` | `"70"` | RSI 과매수 기준값 (이상이면 매도) |
 | `indicator_macd_bearish_sell` | `"false"` | MACD 데드크로스 시 매도 여부 |
 | `claude_model` | `"claude-sonnet-4-6"` | 종목 선정·리포트에 사용할 Claude 모델 ID |
+| `ranking_volume_min_incrrate` | `"0"` | 거래량 순위 필터: 전일대비 거래량 증가율 최솟값 (%, 0=필터없음) |
+| `ranking_strength_min` | `"100"` | 체결강도 순위 필터: 최소 체결강도 (%, 0=필터없음, 100=매수우세 이상) |
+| `ranking_execcount_net_buy_only` | `"true"` | 대량체결 순위 필터: 순매수체결량 > 0 종목만 허용 |
+| `ranking_disparity_d20_min` | `"0"` | 이격도 순위 필터: 20일 이격도 최솟값 (0=필터없음) |
+| `ranking_disparity_d20_max` | `"0"` | 이격도 순위 필터: 20일 이격도 최댓값 (0=필터없음) |
 
 ---
 

@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-03-06 — 순위별 필터 설정 (거래량증가율/체결강도/순매수/이격도)
+
+- **database/db.go**: `TradingSettings`에 순위 필터 필드 5개 추가, 기본값 자동 삽입
+- **trader/engine.go**: `getRankings()`에 필터 로직 추가, `RankItem`에 지표 필드 전달
+- **trader/claude.go**: `RankItem`에 `VolIncrRate`, `Strength`, `NetBuyQty`, `DisparityD20` 필드 추가
+- **api/handlers.go**: `GetSettings`/`UpdateSettings` 신규 키 처리
+- **frontend/Settings.jsx**: 순위 유형별 체크박스 아래 필터 입력창 표시
+
 ## 2026-03-06 — 매도 조건 우선순위 UI + CLAUDE.md 스킬 체크리스트 강화
 
 - **frontend/Settings.jsx**: 매도 조건 체크박스 → 순서 변경 가능한 우선순위 리스트로 교체 (▲▼ 버튼, ＋/✕ 토글)
