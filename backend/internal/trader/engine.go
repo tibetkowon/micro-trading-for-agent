@@ -100,8 +100,25 @@ func (e *Engine) SoldCh() chan<- string {
 	return e.soldCh
 }
 
+// retryBackoff returns wait duration based on consecutive failure count.
+// 1st: 30s, 2nd: 1m, 3rd: 3m, 4th+: 5m
+func retryBackoff(failures int) time.Duration {
+	switch failures {
+	case 1:
+		return 30 * time.Second
+	case 2:
+		return 1 * time.Minute
+	case 3:
+		return 3 * time.Minute
+	default:
+		return 5 * time.Minute
+	}
+}
+
 func (e *Engine) runCycle(ctx context.Context) {
 	e.setState(StateMonitoring)
+
+	consecutiveFailures := 0
 
 	for {
 		select {
@@ -124,7 +141,7 @@ func (e *Engine) runCycle(ctx context.Context) {
 
 		currentCount := e.mon.Count()
 		if currentCount >= settings.MaxPositions {
-			// Wait for a position to be sold or for periodic re-check.
+			consecutiveFailures = 0 // 포지션 보유 중 = 정상 상태
 			select {
 			case <-ctx.Done():
 				e.setState(StateIdle)
@@ -133,7 +150,6 @@ func (e *Engine) runCycle(ctx context.Context) {
 				logger.Info("engine: sold signal received, resuming cycle",
 					map[string]any{"stock_code": code})
 			case <-time.After(30 * time.Second):
-				// Periodic re-check in case count changed without a signal.
 			}
 			continue
 		}
@@ -149,13 +165,17 @@ func (e *Engine) runCycle(ctx context.Context) {
 		}
 
 		if err := e.selectAndBuy(ctx, settings); err != nil {
+			consecutiveFailures++
+			wait := retryBackoff(consecutiveFailures)
 			logger.Error("engine: selectAndBuy failed",
-				map[string]any{"error": err.Error()})
+				map[string]any{"error": err.Error(), "failures": consecutiveFailures, "retry_in": wait.String()})
 			select {
 			case <-ctx.Done():
 				return
-			case <-time.After(30 * time.Second):
+			case <-time.After(wait):
 			}
+		} else {
+			consecutiveFailures = 0
 		}
 	}
 }
